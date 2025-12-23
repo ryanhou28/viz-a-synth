@@ -2,6 +2,9 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
+#include "Visualization/ProbeBuffer.h"
+
+class ProbeManager;
 
 //==============================================================================
 /**
@@ -27,6 +30,11 @@ public:
     void setFilterResonance(float resonance);
     void setADSR(float attack, float decay, float sustain, float release);
 
+    // Probe system
+    void setProbeManager(ProbeManager* manager) { probeManager = manager; }
+    void setVoiceIndex(int index) { voiceIndex = index; }
+    int getVoiceIndex() const { return voiceIndex; }
+
 private:
     juce::dsp::Oscillator<float> oscillator;
     juce::dsp::StateVariableTPTFilter<float> filter;
@@ -36,6 +44,10 @@ private:
     double currentSampleRate = 44100.0;
     int currentMidiNote = 0;
     float velocity = 0.0f;
+
+    // Probe system
+    ProbeManager* probeManager = nullptr;
+    int voiceIndex = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VizASynthVoice)
 };
@@ -96,10 +108,14 @@ public:
     // Parameter access
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
 
+    // Probe system access
+    ProbeManager& getProbeManager() { return probeManager; }
+
 private:
     //==============================================================================
     juce::Synthesiser synth;
     juce::AudioProcessorValueTreeState apvts;
+    ProbeManager probeManager;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void updateVoiceParameters();

@@ -40,6 +40,12 @@ cmake --build . --config Debug
 cmake --build . --config Release
 ```
 
+**Tip: For faster builds, use all CPU cores by adding `-j` to the build command:**
+```bash
+cmake --build . -- -j
+```
+You can also specify the number of cores, e.g. `cmake --build . -- -j8` for 8 cores.
+
 ### Build Targets
 
 The build creates two targets:

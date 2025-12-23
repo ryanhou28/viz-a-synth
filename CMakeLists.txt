@@ -41,6 +41,14 @@ target_sources(VizASynth
     PRIVATE
         src/PluginProcessor.cpp
         src/PluginEditor.cpp
+        src/Visualization/ProbeBuffer.cpp
+        src/Visualization/Oscilloscope.cpp
+)
+
+# Include directories
+target_include_directories(VizASynth
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 # Compile definitions

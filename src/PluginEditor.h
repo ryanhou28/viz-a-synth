@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "Visualization/Oscilloscope.h"
 
 //==============================================================================
 /**
@@ -19,8 +20,22 @@ public:
 
 private:
     void timerCallback() override;
+    void updateProbeButtons();
 
     VizASynthAudioProcessor& audioProcessor;
+
+    // Visualization
+    Oscilloscope oscilloscope;
+
+    // Probe selector buttons
+    juce::TextButton probeOscButton{"OSC"};
+    juce::TextButton probeFilterButton{"FILT"};
+    juce::TextButton probeOutputButton{"OUT"};
+    juce::TextButton freezeButton{"Freeze"};
+
+    // Time window slider
+    juce::Slider timeWindowSlider;
+    juce::Label timeWindowLabel;
 
     // UI Components
     juce::ComboBox oscTypeCombo;

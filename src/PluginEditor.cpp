@@ -3,10 +3,62 @@
 
 //==============================================================================
 VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProcessor& p)
-    : AudioProcessorEditor(&p), audioProcessor(p)
+    : AudioProcessorEditor(&p),
+      audioProcessor(p),
+      oscilloscope(p.getProbeManager())
 {
     // Set editor size
     setSize(800, 600);
+
+    // Add oscilloscope
+    addAndMakeVisible(oscilloscope);
+
+    // Setup probe selector buttons
+    auto setupProbeButton = [this](juce::TextButton& button, ProbePoint probe, juce::Colour colour)
+    {
+        button.setClickingTogglesState(false);
+        button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+        button.setColour(juce::TextButton::textColourOffId, colour);
+        button.onClick = [this, probe]()
+        {
+            audioProcessor.getProbeManager().setActiveProbe(probe);
+            updateProbeButtons();
+        };
+        addAndMakeVisible(button);
+    };
+
+    setupProbeButton(probeOscButton, ProbePoint::Oscillator, Oscilloscope::getProbeColour(ProbePoint::Oscillator));
+    setupProbeButton(probeFilterButton, ProbePoint::PostFilter, Oscilloscope::getProbeColour(ProbePoint::PostFilter));
+    setupProbeButton(probeOutputButton, ProbePoint::Output, Oscilloscope::getProbeColour(ProbePoint::Output));
+
+    // Freeze button
+    freezeButton.setClickingTogglesState(true);
+    freezeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+    freezeButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::red.darker());
+    freezeButton.onClick = [this]()
+    {
+        oscilloscope.setFrozen(freezeButton.getToggleState());
+    };
+    addAndMakeVisible(freezeButton);
+
+    // Time window slider
+    timeWindowSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    timeWindowSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
+    timeWindowSlider.setRange(1.0, 50.0, 0.5);
+    timeWindowSlider.setValue(10.0);
+    timeWindowSlider.setTextValueSuffix(" ms");
+    timeWindowSlider.onValueChange = [this]()
+    {
+        oscilloscope.setTimeWindow(static_cast<float>(timeWindowSlider.getValue()));
+    };
+    addAndMakeVisible(timeWindowSlider);
+
+    timeWindowLabel.setText("Time", juce::dontSendNotification);
+    timeWindowLabel.setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(timeWindowLabel);
+
+    // Update probe button states
+    updateProbeButtons();
 
     // Setup oscillator type combo box
     oscTypeCombo.addItem("Sine", 1);
@@ -116,17 +168,6 @@ void VizASynthAudioProcessorEditor::paint(juce::Graphics& g)
     // Control panel background
     g.setColour(juce::Colour(0xff2a2a2a));
     g.fillRoundedRectangle(20, 60, 350, 520, 10);
-
-    // Visualization area background
-    g.setColour(juce::Colour(0xff0a0a0a));
-    g.fillRoundedRectangle(390, 60, 390, 520, 10);
-
-    // Placeholder text for visualization
-    g.setColour(juce::Colours::grey);
-    g.setFont(16.0f);
-    g.drawText("Oscilloscope / Spectrum", 390, 250, 390, 100, juce::Justification::centred);
-    g.setFont(12.0f);
-    g.drawText("Coming soon...", 390, 320, 390, 30, juce::Justification::centred);
 }
 
 void VizASynthAudioProcessorEditor::resized()
@@ -135,6 +176,35 @@ void VizASynthAudioProcessorEditor::resized()
 
     // Control panel area (left side)
     auto controlArea = bounds.removeFromLeft(370).reduced(30, 70);
+
+    // Visualization area (right side)
+    auto vizArea = bounds.reduced(10, 60);
+
+    // Oscilloscope takes main visualization area
+    auto scopeArea = vizArea.removeFromTop(vizArea.getHeight() - 50);
+    oscilloscope.setBounds(scopeArea);
+
+    // Controls below oscilloscope
+    auto vizControlArea = vizArea.reduced(5, 10);
+
+    // Probe buttons
+    auto probeButtonWidth = 50;
+    probeOscButton.setBounds(vizControlArea.removeFromLeft(probeButtonWidth));
+    vizControlArea.removeFromLeft(5);
+    probeFilterButton.setBounds(vizControlArea.removeFromLeft(probeButtonWidth));
+    vizControlArea.removeFromLeft(5);
+    probeOutputButton.setBounds(vizControlArea.removeFromLeft(probeButtonWidth));
+
+    vizControlArea.removeFromLeft(20);
+
+    // Freeze button
+    freezeButton.setBounds(vizControlArea.removeFromLeft(60));
+
+    vizControlArea.removeFromLeft(20);
+
+    // Time window control
+    timeWindowLabel.setBounds(vizControlArea.removeFromLeft(40));
+    timeWindowSlider.setBounds(vizControlArea.removeFromLeft(150));
 
     // Oscillator section
     auto oscArea = controlArea.removeFromTop(80);
@@ -175,5 +245,32 @@ void VizASynthAudioProcessorEditor::resized()
 
 void VizASynthAudioProcessorEditor::timerCallback()
 {
-    // Future: Update oscilloscope/spectrum display here
+    // Update probe button highlighting
+    updateProbeButtons();
+}
+
+void VizASynthAudioProcessorEditor::updateProbeButtons()
+{
+    auto activeProbe = audioProcessor.getProbeManager().getActiveProbe();
+
+    auto highlightButton = [](juce::TextButton& button, bool active, juce::Colour colour)
+    {
+        if (active)
+        {
+            button.setColour(juce::TextButton::buttonColourId, colour.darker(0.3f));
+            button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        }
+        else
+        {
+            button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+            button.setColour(juce::TextButton::textColourOffId, colour);
+        }
+    };
+
+    highlightButton(probeOscButton, activeProbe == ProbePoint::Oscillator,
+                    Oscilloscope::getProbeColour(ProbePoint::Oscillator));
+    highlightButton(probeFilterButton, activeProbe == ProbePoint::PostFilter,
+                    Oscilloscope::getProbeColour(ProbePoint::PostFilter));
+    highlightButton(probeOutputButton, activeProbe == ProbePoint::Output,
+                    Oscilloscope::getProbeColour(ProbePoint::Output));
 }

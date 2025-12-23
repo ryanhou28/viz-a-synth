@@ -37,6 +37,10 @@ void VizASynthVoice::startNote(int midiNoteNumber, float vel, juce::SynthesiserS
 
     // Start envelope
     adsr.noteOn();
+
+    // Set this as the active voice for probing (most recently triggered)
+    if (probeManager != nullptr)
+        probeManager->setActiveVoice(voiceIndex);
 }
 
 void VizASynthVoice::stopNote(float, bool allowTailOff)
@@ -55,29 +59,45 @@ void VizASynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
     if (!isVoiceActive())
         return;
 
-    auto outputBlock = juce::dsp::AudioBlock<float>(outputBuffer).getSubBlock(startSample, numSamples);
-    auto context = juce::dsp::ProcessContextReplacing<float>(outputBlock);
+    // Check if this is the active voice for probing
+    bool shouldProbe = (probeManager != nullptr) && (probeManager->getActiveVoice() == voiceIndex);
+    ProbePoint activeProbePoint = shouldProbe ? probeManager->getActiveProbe() : ProbePoint::Output;
 
-    // Generate oscillator output
-    oscillator.process(context);
-
-    // Apply filter
-    filter.process(context);
-
-    // Apply ADSR envelope
+    // Process sample by sample to enable probing at different points
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        auto env = adsr.getNextSample();
+        // Generate oscillator sample
+        float oscOut = oscillator.processSample(0.0f);
+
+        // Probe oscillator output
+        if (shouldProbe && activeProbePoint == ProbePoint::Oscillator)
+            probeManager->getProbeBuffer().push(oscOut);
+
+        // Apply filter
+        float filtered = filter.processSample(0, oscOut);
+
+        // Probe post-filter
+        if (shouldProbe && activeProbePoint == ProbePoint::PostFilter)
+            probeManager->getProbeBuffer().push(filtered);
+
+        // Apply envelope
+        float env = adsr.getNextSample();
 
         if (!adsr.isActive())
         {
             clearCurrentNote();
-            break;
+            return;
         }
 
+        float finalOut = filtered * env * velocity;
+
+        // Probe final output
+        if (shouldProbe && activeProbePoint == ProbePoint::Output)
+            probeManager->getProbeBuffer().push(finalOut);
+
+        // Write to output buffer (stereo)
         for (int channel = 0; channel < outputBuffer.getNumChannels(); ++channel)
-            outputBuffer.setSample(channel, startSample + sample,
-                                   outputBuffer.getSample(channel, startSample + sample) * env * velocity);
+            outputBuffer.addSample(channel, startSample + sample, finalOut);
     }
 }
 
@@ -152,7 +172,12 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
 {
     // Add voices to synthesizer
     for (int i = 0; i < 8; ++i)
-        synth.addVoice(new VizASynthVoice());
+    {
+        auto* voice = new VizASynthVoice();
+        voice->setVoiceIndex(i);
+        voice->setProbeManager(&probeManager);
+        synth.addVoice(voice);
+    }
 
     // Add sound
     synth.addSound(new VizASynthSound());
@@ -281,6 +306,7 @@ void VizASynthAudioProcessor::changeProgramName(int, const juce::String&)
 void VizASynthAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     synth.setCurrentPlaybackSampleRate(sampleRate);
+    probeManager.setSampleRate(sampleRate);
 
     for (int i = 0; i < synth.getNumVoices(); ++i)
     {
