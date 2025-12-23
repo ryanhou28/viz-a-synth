@@ -108,6 +108,5 @@ Start the standalone app, select `VizASynthTestPort` as MIDI input, then run:
 ```bash
 python send_single_note.py
 python send_scale.py
+python keyboard_to_midi.py
 ```
-
-See `docs/python-midi-test.md` for details.
