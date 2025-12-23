@@ -2,6 +2,18 @@
 
 #include "PluginProcessor.h"
 #include "Visualization/Oscilloscope.h"
+#include "Visualization/SpectrumAnalyzer.h"
+#include "Visualization/SingleCycleView.h"
+
+//==============================================================================
+/**
+ * Visualization mode enumeration
+ */
+enum class VisualizationMode
+{
+    Oscilloscope,
+    Spectrum
+};
 
 //==============================================================================
 /**
@@ -21,17 +33,27 @@ public:
 private:
     void timerCallback() override;
     void updateProbeButtons();
+    void updateVisualizationMode();
+    void setVisualizationMode(VisualizationMode mode);
 
     VizASynthAudioProcessor& audioProcessor;
 
     // Visualization
     Oscilloscope oscilloscope;
+    SpectrumAnalyzer spectrumAnalyzer;
+    SingleCycleView singleCycleView;
+    VisualizationMode currentVizMode = VisualizationMode::Oscilloscope;
+
+    // Visualization mode selector
+    juce::TextButton scopeButton{"Scope"};
+    juce::TextButton spectrumButton{"Spectrum"};
 
     // Probe selector buttons
     juce::TextButton probeOscButton{"OSC"};
     juce::TextButton probeFilterButton{"FILT"};
     juce::TextButton probeOutputButton{"OUT"};
     juce::TextButton freezeButton{"Freeze"};
+    juce::TextButton clearTraceButton{"Clear"};
 
     // Time window slider
     juce::Slider timeWindowSlider;

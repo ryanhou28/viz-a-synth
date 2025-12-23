@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 #include "Visualization/ProbeBuffer.h"
+#include "DSP/PolyBLEPOscillator.h"
 
 class ProbeManager;
 
@@ -35,8 +36,10 @@ public:
     void setVoiceIndex(int index) { voiceIndex = index; }
     int getVoiceIndex() const { return voiceIndex; }
 
+    PolyBLEPOscillator& getOscillator() { return oscillator; }
+
 private:
-    juce::dsp::Oscillator<float> oscillator;
+    PolyBLEPOscillator oscillator;
     juce::dsp::StateVariableTPTFilter<float> filter;
     juce::ADSR adsr;
     juce::ADSR::Parameters adsrParams;
@@ -110,6 +113,14 @@ public:
 
     // Probe system access
     ProbeManager& getProbeManager() { return probeManager; }
+
+    // Retrieve a specific voice by index
+    VizASynthVoice* getVoice(int index) {
+        if (index >= 0 && index < synth.getNumVoices()) {
+            return dynamic_cast<VizASynthVoice*>(synth.getVoice(index));
+        }
+        return nullptr;
+    }
 
 private:
     //==============================================================================

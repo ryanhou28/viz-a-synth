@@ -43,6 +43,8 @@ target_sources(VizASynth
         src/PluginEditor.cpp
         src/Visualization/ProbeBuffer.cpp
         src/Visualization/Oscilloscope.cpp
+        src/Visualization/SpectrumAnalyzer.cpp
+        src/Visualization/SingleCycleView.cpp
 )
 
 # Include directories

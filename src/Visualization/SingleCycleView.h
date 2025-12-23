@@ -2,27 +2,24 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "ProbeBuffer.h"
+#include "DSP/PolyBLEPOscillator.h" // Include PolyBLEPOscillator
 #include <vector>
 
 //==============================================================================
 /**
- * Oscilloscope visualization component.
- * Displays time-domain waveform from a ProbeBuffer with zero-crossing triggering.
+ * Single-Cycle visualization component.
+ * Displays exactly one waveform cycle with normalized phase (0-100%).
+ * The display stays stable regardless of note frequency.
  */
-class Oscilloscope : public juce::Component,
-                     private juce::Timer
+class SingleCycleView : public juce::Component, public juce::Timer
 {
 public:
-    Oscilloscope(ProbeManager& probeManager);
-    ~Oscilloscope() override;
+    SingleCycleView(ProbeManager& probeManager, PolyBLEPOscillator& oscillator);
+    ~SingleCycleView() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
-
-    // Display settings
-    void setTimeWindow(float milliseconds);
-    float getTimeWindow() const { return timeWindowMs; }
 
     // Freeze functionality
     void setFrozen(bool frozen);
@@ -41,7 +38,7 @@ private:
     // Draw the grid
     void drawGrid(juce::Graphics& g, juce::Rectangle<float> bounds);
 
-    // Draw the waveform
+    // Draw the waveform (one cycle)
     void drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds,
                       const std::vector<float>& samples, juce::Colour colour);
 
@@ -53,12 +50,14 @@ private:
 
     ProbeManager& probeManager;
 
+    // Reference to oscillator for phase-locked rendering
+    PolyBLEPOscillator& oscillator;
+
     // Display buffer (accumulated samples for display)
     std::vector<float> displayBuffer;
     std::vector<float> frozenBuffer;
 
     // Settings
-    float timeWindowMs = 10.0f;  // Display window in milliseconds
     bool frozen = false;
 
     // Voice mode toggle button bounds (for hit testing)
@@ -69,5 +68,5 @@ private:
     static constexpr int RefreshRateHz = 60;
     static constexpr float TriggerHysteresis = 0.02f;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Oscilloscope)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SingleCycleView)
 };

@@ -90,3 +90,38 @@ int ProbeManager::getActiveVoice() const
 {
     return activeVoiceIndex.load();
 }
+
+void ProbeManager::setVoiceMode(VoiceMode mode)
+{
+    voiceMode.store(mode);
+}
+
+VoiceMode ProbeManager::getVoiceMode() const
+{
+    return voiceMode.load();
+}
+
+// Added tracking for active voice frequencies
+std::array<std::atomic<float>, 8> voiceFrequencies{}; // Initialize to 0
+
+void ProbeManager::setVoiceFrequency(int voiceIndex, float frequency)
+{
+    voiceFrequencies[voiceIndex].store(frequency);
+}
+
+void ProbeManager::clearVoiceFrequency(int voiceIndex)
+{
+    voiceFrequencies[voiceIndex].store(0.0f);
+}
+
+float ProbeManager::getLowestActiveFrequency() const
+{
+    float lowest = std::numeric_limits<float>::max();
+    for (const auto& freq : voiceFrequencies)
+    {
+        float value = freq.load();
+        if (value > 0.0f && value < lowest)
+            lowest = value;
+    }
+    return (lowest == std::numeric_limits<float>::max()) ? 0.0f : lowest;
+}

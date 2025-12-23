@@ -5,13 +5,37 @@
 VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProcessor& p)
     : AudioProcessorEditor(&p),
       audioProcessor(p),
-      oscilloscope(p.getProbeManager())
+      oscilloscope(p.getProbeManager()),
+      spectrumAnalyzer(p.getProbeManager()),
+      singleCycleView(p.getProbeManager(),
+                      [&]() -> PolyBLEPOscillator& {
+                          if (auto* voice = p.getVoice(0)) {
+                              return voice->getOscillator();
+                          }
+                          throw std::runtime_error("No voices available to provide an oscillator.");
+                      }())
 {
     // Set editor size
-    setSize(800, 600);
+    setSize(1000, 600);
 
-    // Add oscilloscope
+    // Add visualization components
     addAndMakeVisible(oscilloscope);
+    addAndMakeVisible(spectrumAnalyzer);
+    addAndMakeVisible(singleCycleView);
+
+    // Setup visualization mode selector buttons
+    scopeButton.setClickingTogglesState(false);
+    scopeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff4a4a4a));
+    scopeButton.onClick = [this]() { setVisualizationMode(VisualizationMode::Oscilloscope); };
+    addAndMakeVisible(scopeButton);
+
+    spectrumButton.setClickingTogglesState(false);
+    spectrumButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+    spectrumButton.onClick = [this]() { setVisualizationMode(VisualizationMode::Spectrum); };
+    addAndMakeVisible(spectrumButton);
+
+    // Initial visualization mode
+    setVisualizationMode(VisualizationMode::Oscilloscope);
 
     // Setup probe selector buttons
     auto setupProbeButton = [this](juce::TextButton& button, ProbePoint probe, juce::Colour colour)
@@ -37,9 +61,22 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     freezeButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::red.darker());
     freezeButton.onClick = [this]()
     {
-        oscilloscope.setFrozen(freezeButton.getToggleState());
+        bool frozen = freezeButton.getToggleState();
+        oscilloscope.setFrozen(frozen);
+        spectrumAnalyzer.setFrozen(frozen);
+        singleCycleView.setFrozen(frozen);
     };
     addAndMakeVisible(freezeButton);
+
+    // Clear trace button
+    clearTraceButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+    clearTraceButton.onClick = [this]()
+    {
+        oscilloscope.clearFrozenTrace();
+        spectrumAnalyzer.clearFrozenTrace();
+        singleCycleView.clearFrozenTrace();
+    };
+    addAndMakeVisible(clearTraceButton);
 
     // Time window slider
     timeWindowSlider.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -180,31 +217,56 @@ void VizASynthAudioProcessorEditor::resized()
     // Visualization area (right side)
     auto vizArea = bounds.reduced(10, 60);
 
-    // Oscilloscope takes main visualization area
+    // Visualization area (minus control bar at bottom)
     auto scopeArea = vizArea.removeFromTop(vizArea.getHeight() - 50);
-    oscilloscope.setBounds(scopeArea);
 
-    // Controls below oscilloscope
+    // In Oscilloscope mode: stack oscilloscope and single-cycle view
+    // In Spectrum mode: show only spectrum analyzer
+    if (currentVizMode == VisualizationMode::Oscilloscope)
+    {
+        auto topHalf = scopeArea.removeFromTop(scopeArea.getHeight() / 2);
+        oscilloscope.setBounds(topHalf.reduced(0, 2));
+        singleCycleView.setBounds(scopeArea.reduced(0, 2));
+        spectrumAnalyzer.setBounds(scopeArea);  // Hidden but positioned
+    }
+    else
+    {
+        spectrumAnalyzer.setBounds(scopeArea);
+        oscilloscope.setBounds(scopeArea);      // Hidden but positioned
+        singleCycleView.setBounds(scopeArea);   // Hidden but positioned
+    }
+
+    // Controls below visualization
     auto vizControlArea = vizArea.reduced(5, 10);
 
-    // Probe buttons
-    auto probeButtonWidth = 50;
-    probeOscButton.setBounds(vizControlArea.removeFromLeft(probeButtonWidth));
-    vizControlArea.removeFromLeft(5);
-    probeFilterButton.setBounds(vizControlArea.removeFromLeft(probeButtonWidth));
-    vizControlArea.removeFromLeft(5);
-    probeOutputButton.setBounds(vizControlArea.removeFromLeft(probeButtonWidth));
+    // Visualization mode selector (Scope / Spectrum)
+    scopeButton.setBounds(vizControlArea.removeFromLeft(60));
+    vizControlArea.removeFromLeft(2);
+    spectrumButton.setBounds(vizControlArea.removeFromLeft(70));
 
-    vizControlArea.removeFromLeft(20);
+    vizControlArea.removeFromLeft(12);
+
+    // Probe buttons
+    probeOscButton.setBounds(vizControlArea.removeFromLeft(45));
+    vizControlArea.removeFromLeft(4);
+    probeFilterButton.setBounds(vizControlArea.removeFromLeft(45));
+    vizControlArea.removeFromLeft(4);
+    probeOutputButton.setBounds(vizControlArea.removeFromLeft(45));
+
+    vizControlArea.removeFromLeft(12);
 
     // Freeze button
-    freezeButton.setBounds(vizControlArea.removeFromLeft(60));
+    freezeButton.setBounds(vizControlArea.removeFromLeft(55));
+    vizControlArea.removeFromLeft(4);
 
-    vizControlArea.removeFromLeft(20);
+    // Clear trace button
+    clearTraceButton.setBounds(vizControlArea.removeFromLeft(50));
 
-    // Time window control
-    timeWindowLabel.setBounds(vizControlArea.removeFromLeft(40));
-    timeWindowSlider.setBounds(vizControlArea.removeFromLeft(150));
+    vizControlArea.removeFromLeft(12);
+
+    // Time window control (only relevant for oscilloscope, but always visible)
+    timeWindowLabel.setBounds(vizControlArea.removeFromLeft(35));
+    timeWindowSlider.setBounds(vizControlArea);
 
     // Oscillator section
     auto oscArea = controlArea.removeFromTop(80);
@@ -273,4 +335,34 @@ void VizASynthAudioProcessorEditor::updateProbeButtons()
                     Oscilloscope::getProbeColour(ProbePoint::PostFilter));
     highlightButton(probeOutputButton, activeProbe == ProbePoint::Output,
                     Oscilloscope::getProbeColour(ProbePoint::Output));
+}
+
+void VizASynthAudioProcessorEditor::setVisualizationMode(VisualizationMode mode)
+{
+    currentVizMode = mode;
+    updateVisualizationMode();
+}
+
+void VizASynthAudioProcessorEditor::updateVisualizationMode()
+{
+    bool isScope = (currentVizMode == VisualizationMode::Oscilloscope);
+
+    // Show/hide appropriate visualization
+    oscilloscope.setVisible(isScope);
+    singleCycleView.setVisible(isScope);
+    spectrumAnalyzer.setVisible(!isScope);
+
+    // Update button highlighting
+    scopeButton.setColour(juce::TextButton::buttonColourId,
+                          isScope ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff3a3a3a));
+    spectrumButton.setColour(juce::TextButton::buttonColourId,
+                             !isScope ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff3a3a3a));
+
+    // Show/hide time window control (only relevant for oscilloscope)
+    timeWindowSlider.setEnabled(isScope);
+    timeWindowLabel.setAlpha(isScope ? 1.0f : 0.4f);
+    timeWindowSlider.setAlpha(isScope ? 1.0f : 0.4f);
+
+    // Re-layout the visualization area
+    resized();
 }

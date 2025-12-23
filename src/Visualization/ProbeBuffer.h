@@ -15,6 +15,15 @@ enum class ProbePoint
     Output           // Final voice output (post-envelope)
 };
 
+/**
+ * Voice visualization mode
+ */
+enum class VoiceMode
+{
+    Mix,         // Show sum of all voices (default)
+    SingleVoice  // Show only the most recently triggered voice
+};
+
 //==============================================================================
 /**
  * Lock-free circular buffer for passing audio samples from audio thread to UI thread.
@@ -57,8 +66,11 @@ class ProbeManager
 public:
     ProbeManager();
 
-    // Get the probe buffer (for UI to read from)
+    // Get the probe buffer for single voice (for UI to read from)
     ProbeBuffer& getProbeBuffer() { return probeBuffer; }
+
+    // Get the probe buffer for mixed output (sum of all voices)
+    ProbeBuffer& getMixProbeBuffer() { return mixProbeBuffer; }
 
     // Set which probe point is active
     void setActiveProbe(ProbePoint probe);
@@ -68,14 +80,30 @@ public:
     void setActiveVoice(int voiceIndex);
     int getActiveVoice() const;
 
+    // Voice mode (Mix vs SingleVoice)
+    void setVoiceMode(VoiceMode mode);
+    VoiceMode getVoiceMode() const;
+
+    // Frequency tracking (for single-cycle view)
+    void setActiveFrequency(float freq) { activeFrequency.store(freq); }
+    float getActiveFrequency() const { return activeFrequency.load(); }
+
     // Get current sample rate (for UI calculations)
     void setSampleRate(double rate) { sampleRate.store(rate); }
     double getSampleRate() const { return sampleRate.load(); }
 
+    // Frequency management for voices
+    void setVoiceFrequency(int voiceIndex, float frequency);
+    void clearVoiceFrequency(int voiceIndex);
+    float getLowestActiveFrequency() const;
+
 private:
-    ProbeBuffer probeBuffer;
+    ProbeBuffer probeBuffer;        // Single voice probe buffer
+    ProbeBuffer mixProbeBuffer;     // Mixed output probe buffer
     std::atomic<ProbePoint> activeProbe{ProbePoint::Output};
     std::atomic<int> activeVoiceIndex{-1};
+    std::atomic<VoiceMode> voiceMode{VoiceMode::Mix};  // Default to Mix
+    std::atomic<float> activeFrequency{440.0f};        // For single-cycle view
     std::atomic<double> sampleRate{44100.0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ProbeManager)

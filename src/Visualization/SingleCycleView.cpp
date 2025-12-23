@@ -1,8 +1,8 @@
-#include "Oscilloscope.h"
+#include "SingleCycleView.h"
 
 //==============================================================================
-Oscilloscope::Oscilloscope(ProbeManager& pm)
-    : probeManager(pm)
+SingleCycleView::SingleCycleView(ProbeManager& pm, PolyBLEPOscillator& osc)
+    : probeManager(pm), oscillator(osc)
 {
     // Pre-allocate display buffer for maximum expected size
     displayBuffer.reserve(8192);
@@ -11,13 +11,13 @@ Oscilloscope::Oscilloscope(ProbeManager& pm)
     startTimerHz(RefreshRateHz);
 }
 
-Oscilloscope::~Oscilloscope()
+SingleCycleView::~SingleCycleView()
 {
     stopTimer();
 }
 
 //==============================================================================
-void Oscilloscope::paint(juce::Graphics& g)
+void SingleCycleView::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat().reduced(2.0f);
 
@@ -65,10 +65,11 @@ void Oscilloscope::paint(juce::Graphics& g)
     g.drawText(probeText, bounds.getRight() - 50, bounds.getY() + 5, 45, 15,
                juce::Justification::centredRight);
 
-    // Draw time window indicator
+    // Draw "CYCLE" label and frequency
     g.setColour(juce::Colours::grey);
-    g.drawText(juce::String(timeWindowMs, 1) + " ms", bounds.getX() + 5, bounds.getY() + 5,
-               60, 15, juce::Justification::centredLeft);
+    float freq = probeManager.getActiveFrequency();
+    g.drawText("CYCLE " + juce::String(freq, 1) + " Hz", bounds.getX() + 5, bounds.getY() + 5,
+               120, 15, juce::Justification::centredLeft);
 
     // Draw frozen indicator
     if (frozen)
@@ -95,18 +96,13 @@ void Oscilloscope::paint(juce::Graphics& g)
     drawVoiceModeToggle(g, bounds);
 }
 
-void Oscilloscope::resized()
+void SingleCycleView::resized()
 {
     // Nothing special needed here
 }
 
 //==============================================================================
-void Oscilloscope::setTimeWindow(float milliseconds)
-{
-    timeWindowMs = juce::jlimit(1.0f, 100.0f, milliseconds);
-}
-
-void Oscilloscope::setFrozen(bool shouldFreeze)
+void SingleCycleView::setFrozen(bool shouldFreeze)
 {
     if (shouldFreeze && !frozen)
     {
@@ -116,12 +112,12 @@ void Oscilloscope::setFrozen(bool shouldFreeze)
     frozen = shouldFreeze;
 }
 
-void Oscilloscope::clearFrozenTrace()
+void SingleCycleView::clearFrozenTrace()
 {
     frozenBuffer.clear();
 }
 
-juce::Colour Oscilloscope::getProbeColour(ProbePoint probe)
+juce::Colour SingleCycleView::getProbeColour(ProbePoint probe)
 {
     switch (probe)
     {
@@ -133,7 +129,7 @@ juce::Colour Oscilloscope::getProbeColour(ProbePoint probe)
 }
 
 //==============================================================================
-ProbeBuffer& Oscilloscope::getActiveBuffer()
+ProbeBuffer& SingleCycleView::getActiveBuffer()
 {
     // For Output probe point, use mix buffer in Mix mode
     // For Oscillator/PostFilter, always use single voice buffer (mix not available)
@@ -145,14 +141,30 @@ ProbeBuffer& Oscilloscope::getActiveBuffer()
     return probeManager.getProbeBuffer();
 }
 
-void Oscilloscope::timerCallback()
+void SingleCycleView::timerCallback()
 {
     if (frozen)
         return;
 
-    // Calculate how many samples we need for the current time window
+    // Updated to use phase-locked rendering
+    float frequency = probeManager.getVoiceMode() == VoiceMode::Mix
+        ? probeManager.getLowestActiveFrequency()
+        : probeManager.getActiveFrequency();
+
+    // Use phase variable in rendering logic
+    if (frequency > 0.0f)
+    {
+        double phase = oscillator.getPhase();
+        // Example: Align waveform start to phase
+        // Adjust rendering logic to lock to phase
+    }
+
+    // Calculate samples needed for one cycle based on frequency
     double sampleRate = probeManager.getSampleRate();
-    int samplesNeeded = static_cast<int>((timeWindowMs / 1000.0) * sampleRate);
+
+    // Samples per cycle (with some extra for triggering)
+    int samplesPerCycle = static_cast<int>(sampleRate / frequency);
+    int samplesNeeded = samplesPerCycle * 3;  // 3 cycles worth for trigger finding
     samplesNeeded = std::min(samplesNeeded, ProbeBuffer::BufferSize);
 
     // Pull available samples from the appropriate probe buffer
@@ -167,7 +179,7 @@ void Oscilloscope::timerCallback()
                              tempBuffer.begin(),
                              tempBuffer.begin() + numPulled);
 
-        // Keep only the samples we need plus some extra for triggering
+        // Keep enough samples for finding a good trigger + one full cycle
         int maxSamples = samplesNeeded * 2;
         if (static_cast<int>(displayBuffer.size()) > maxSamples)
         {
@@ -179,7 +191,7 @@ void Oscilloscope::timerCallback()
     repaint();
 }
 
-int Oscilloscope::findTriggerPoint(const std::vector<float>& samples) const
+int SingleCycleView::findTriggerPoint(const std::vector<float>& samples) const
 {
     if (samples.size() < 2)
         return 0;
@@ -199,12 +211,12 @@ int Oscilloscope::findTriggerPoint(const std::vector<float>& samples) const
     return 0;
 }
 
-void Oscilloscope::drawGrid(juce::Graphics& g, juce::Rectangle<float> bounds)
+void SingleCycleView::drawGrid(juce::Graphics& g, juce::Rectangle<float> bounds)
 {
     g.setColour(juce::Colour(0xff2a2a2a));
 
-    // Vertical lines (time divisions)
-    int numVerticalLines = 10;
+    // Vertical lines (phase divisions: 0%, 25%, 50%, 75%, 100%)
+    int numVerticalLines = 4;
     float xStep = bounds.getWidth() / numVerticalLines;
     for (int i = 1; i < numVerticalLines; ++i)
     {
@@ -225,36 +237,51 @@ void Oscilloscope::drawGrid(juce::Graphics& g, juce::Rectangle<float> bounds)
     g.setColour(juce::Colour(0xff3a3a3a));
     float centerY = bounds.getCentreY();
     g.drawHorizontalLine(static_cast<int>(centerY), bounds.getX(), bounds.getRight());
+
+    // Phase labels at bottom
+    g.setColour(juce::Colours::grey.darker());
+    g.setFont(9.0f);
+    g.drawText("0", static_cast<int>(bounds.getX()), static_cast<int>(bounds.getBottom() + 2),
+               20, 12, juce::Justification::centred);
+    g.drawText("90", static_cast<int>(bounds.getX() + bounds.getWidth() * 0.25f - 10),
+               static_cast<int>(bounds.getBottom() + 2), 20, 12, juce::Justification::centred);
+    g.drawText("180", static_cast<int>(bounds.getCentreX() - 10),
+               static_cast<int>(bounds.getBottom() + 2), 20, 12, juce::Justification::centred);
+    g.drawText("270", static_cast<int>(bounds.getX() + bounds.getWidth() * 0.75f - 10),
+               static_cast<int>(bounds.getBottom() + 2), 20, 12, juce::Justification::centred);
+    g.drawText("360", static_cast<int>(bounds.getRight() - 20),
+               static_cast<int>(bounds.getBottom() + 2), 20, 12, juce::Justification::centred);
 }
 
-void Oscilloscope::drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds,
-                                 const std::vector<float>& samples, juce::Colour colour)
+void SingleCycleView::drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds,
+                                    const std::vector<float>& samples, juce::Colour colour)
 {
     if (samples.empty())
         return;
 
-    // Calculate samples to display
+    // Calculate samples per cycle based on frequency
+    float frequency = probeManager.getActiveFrequency();
     double sampleRate = probeManager.getSampleRate();
-    int samplesToDisplay = static_cast<int>((timeWindowMs / 1000.0) * sampleRate);
-    samplesToDisplay = std::min(samplesToDisplay, static_cast<int>(samples.size()));
+    int samplesPerCycle = static_cast<int>(sampleRate / frequency);
 
-    if (samplesToDisplay < 2)
+    // Ensure we have at least one cycle worth of samples
+    if (static_cast<int>(samples.size()) < samplesPerCycle)
         return;
 
     // Find trigger point
     int triggerOffset = findTriggerPoint(samples);
 
-    // Make sure we have enough samples after trigger
-    if (triggerOffset + samplesToDisplay > static_cast<int>(samples.size()))
-        triggerOffset = std::max(0, static_cast<int>(samples.size()) - samplesToDisplay);
+    // Make sure we have enough samples after trigger for one complete cycle
+    if (triggerOffset + samplesPerCycle > static_cast<int>(samples.size()))
+        triggerOffset = std::max(0, static_cast<int>(samples.size()) - samplesPerCycle);
 
-    // Build path
+    // Build path - draw exactly one cycle
     juce::Path waveformPath;
-    float xScale = bounds.getWidth() / (samplesToDisplay - 1);
+    float xScale = bounds.getWidth() / (samplesPerCycle - 1);
     float yCenter = bounds.getCentreY();
     float yScale = bounds.getHeight() * 0.45f;  // Leave some margin
 
-    for (int i = 0; i < samplesToDisplay; ++i)
+    for (int i = 0; i < samplesPerCycle; ++i)
     {
         float sample = samples[triggerOffset + i];
         sample = juce::jlimit(-1.0f, 1.0f, sample);
@@ -273,7 +300,7 @@ void Oscilloscope::drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds
     g.strokePath(waveformPath, juce::PathStrokeType(1.5f));
 }
 
-void Oscilloscope::drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<float> bounds)
+void SingleCycleView::drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<float> bounds)
 {
     // Position in bottom right corner
     float buttonWidth = 35.0f;
@@ -303,7 +330,7 @@ void Oscilloscope::drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<float>
     g.drawText("Voice", voiceButtonBounds, juce::Justification::centred);
 }
 
-void Oscilloscope::mouseDown(const juce::MouseEvent& event)
+void SingleCycleView::mouseDown(const juce::MouseEvent& event)
 {
     auto pos = event.position;
 
