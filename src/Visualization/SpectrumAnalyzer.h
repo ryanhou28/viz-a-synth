@@ -74,8 +74,6 @@ private:
     // Settings
     bool frozen = false;
     float smoothingFactor = 0.8f;  // Exponential smoothing
-    static constexpr float DecayRate = 0.1f; // Decay rate for stale spectrum
-    float deltaTime = 1.0f / RefreshRateHz; // Time step for decay
 
     // Voice mode toggle button bounds (for hit testing)
     juce::Rectangle<float> mixButtonBounds;

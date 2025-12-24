@@ -1,12 +1,16 @@
 #include "SingleCycleView.h"
+#include <cmath>
 
 //==============================================================================
 SingleCycleView::SingleCycleView(ProbeManager& pm, PolyBLEPOscillator& osc)
     : probeManager(pm), oscillator(osc)
 {
-    // Pre-allocate display buffer for maximum expected size
-    displayBuffer.reserve(8192);
-    frozenBuffer.reserve(8192);
+    // Pre-allocate waveform buffer
+    waveformCycle.resize(SamplesPerCycle);
+    frozenCycle.resize(SamplesPerCycle);
+
+    // Generate initial waveform
+    generateWaveformCycle();
 
     startTimerHz(RefreshRateHz);
 }
@@ -35,19 +39,19 @@ void SingleCycleView::paint(juce::Graphics& g)
     auto probeColour = getProbeColour(probeManager.getActiveProbe());
 
     // Draw frozen trace first (ghosted)
-    if (!frozenBuffer.empty())
+    if (!frozenCycle.empty() && frozen)
     {
-        drawWaveform(g, scopeBounds, frozenBuffer, probeColour.withAlpha(0.3f));
+        drawWaveform(g, scopeBounds, frozenCycle, probeColour.withAlpha(0.3f));
     }
 
     // Draw live trace if not frozen
-    if (!frozen && !displayBuffer.empty())
+    if (!frozen && !waveformCycle.empty())
     {
-        drawWaveform(g, scopeBounds, displayBuffer, probeColour);
+        drawWaveform(g, scopeBounds, waveformCycle, probeColour);
     }
-    else if (frozen && !frozenBuffer.empty())
+    else if (frozen && !frozenCycle.empty())
     {
-        drawWaveform(g, scopeBounds, frozenBuffer, probeColour);
+        drawWaveform(g, scopeBounds, frozenCycle, probeColour);
     }
 
     // Draw probe indicator
@@ -62,38 +66,45 @@ void SingleCycleView::paint(juce::Graphics& g)
         case ProbePoint::Output:     probeText = "OUT"; break;
     }
 
-    g.drawText(probeText, bounds.getRight() - 50, bounds.getY() + 5, 45, 15,
+    g.drawText(probeText, static_cast<int>(bounds.getRight() - 50),
+               static_cast<int>(bounds.getY() + 5), 45, 15,
                juce::Justification::centredRight);
 
-    // Draw "CYCLE" label and frequency
+    // Draw "CYCLE" label and waveform type
     g.setColour(juce::Colours::grey);
-    float freq = probeManager.getActiveFrequency();
-    g.drawText("CYCLE " + juce::String(freq, 1) + " Hz", bounds.getX() + 5, bounds.getY() + 5,
-               120, 15, juce::Justification::centredLeft);
+    juce::String waveformName;
+    switch (currentWaveform)
+    {
+        case OscillatorWaveform::Sine:     waveformName = "Sine"; break;
+        case OscillatorWaveform::Saw:      waveformName = "Saw"; break;
+        case OscillatorWaveform::Square:   waveformName = "Square"; break;
+        case OscillatorWaveform::Triangle: waveformName = "Triangle"; break;
+    }
+
+    // Show voice count in Mix mode
+    juce::String modeInfo;
+    if (probeManager.getVoiceMode() == VoiceMode::Mix)
+    {
+        auto frequencies = probeManager.getActiveFrequencies();
+        if (frequencies.size() > 1)
+            modeInfo = " [" + juce::String(frequencies.size()) + " voices]";
+    }
+
+    g.drawText("CYCLE - " + waveformName + modeInfo, static_cast<int>(bounds.getX() + 5),
+               static_cast<int>(bounds.getY() + 5), 180, 15,
+               juce::Justification::centredLeft);
+
+    // Draw voice mode toggle
+    drawVoiceModeToggle(g, bounds);
 
     // Draw frozen indicator
     if (frozen)
     {
         g.setColour(juce::Colours::red.withAlpha(0.8f));
-        g.drawText("FROZEN", bounds.getCentreX() - 30, bounds.getY() + 5, 60, 15,
+        g.drawText("FROZEN", static_cast<int>(bounds.getCentreX() - 30),
+                   static_cast<int>(bounds.getY() + 5), 60, 15,
                    juce::Justification::centred);
     }
-
-    // Voice indicator (only show in single voice mode)
-    if (probeManager.getVoiceMode() == VoiceMode::SingleVoice)
-    {
-        int activeVoice = probeManager.getActiveVoice();
-        if (activeVoice >= 0)
-        {
-            g.setColour(juce::Colours::grey);
-            g.drawText("Voice " + juce::String(activeVoice + 1) + "/8",
-                       bounds.getX() + 5, bounds.getBottom() - 20, 80, 15,
-                       juce::Justification::centredLeft);
-        }
-    }
-
-    // Draw voice mode toggle
-    drawVoiceModeToggle(g, bounds);
 }
 
 void SingleCycleView::resized()
@@ -106,15 +117,15 @@ void SingleCycleView::setFrozen(bool shouldFreeze)
 {
     if (shouldFreeze && !frozen)
     {
-        // Capture current display to frozen buffer
-        frozenBuffer = displayBuffer;
+        // Capture current waveform to frozen buffer
+        frozenCycle = waveformCycle;
     }
     frozen = shouldFreeze;
 }
 
 void SingleCycleView::clearFrozenTrace()
 {
-    frozenBuffer.clear();
+    std::fill(frozenCycle.begin(), frozenCycle.end(), 0.0f);
 }
 
 juce::Colour SingleCycleView::getProbeColour(ProbePoint probe)
@@ -129,93 +140,103 @@ juce::Colour SingleCycleView::getProbeColour(ProbePoint probe)
 }
 
 //==============================================================================
-ProbeBuffer& SingleCycleView::getActiveBuffer()
-{
-    // For Output probe point, use mix buffer in Mix mode
-    // For Oscillator/PostFilter, always use single voice buffer (mix not available)
-    if (probeManager.getVoiceMode() == VoiceMode::Mix &&
-        probeManager.getActiveProbe() == ProbePoint::Output)
-    {
-        return probeManager.getMixProbeBuffer();
-    }
-    return probeManager.getProbeBuffer();
-}
-
 void SingleCycleView::timerCallback()
 {
     if (frozen)
         return;
 
-    // Updated to use phase-locked rendering
-    float frequency = probeManager.getVoiceMode() == VoiceMode::Mix
-        ? probeManager.getLowestActiveFrequency()
-        : probeManager.getActiveFrequency();
-
-    // Use phase variable in rendering logic
-    if (frequency > 0.0f)
-    {
-        double phase = oscillator.getPhase();
-        // Example: Align waveform start to phase
-        // Adjust rendering logic to lock to phase
-    }
-
-    // Calculate samples needed for one cycle based on frequency
-    double sampleRate = probeManager.getSampleRate();
-
-    // Samples per cycle (with some extra for triggering)
-    int samplesPerCycle = static_cast<int>(sampleRate / frequency);
-    int samplesNeeded = samplesPerCycle * 3;  // 3 cycles worth for trigger finding
-    samplesNeeded = std::min(samplesNeeded, ProbeBuffer::BufferSize);
-
-    // Pull available samples from the appropriate probe buffer
-    std::vector<float> tempBuffer(ProbeBuffer::BufferSize);
-    int numPulled = getActiveBuffer().pull(tempBuffer.data(),
-                                           static_cast<int>(tempBuffer.size()));
-
-    if (numPulled > 0)
-    {
-        // Append to display buffer
-        displayBuffer.insert(displayBuffer.end(),
-                             tempBuffer.begin(),
-                             tempBuffer.begin() + numPulled);
-
-        // Keep enough samples for finding a good trigger + one full cycle
-        int maxSamples = samplesNeeded * 2;
-        if (static_cast<int>(displayBuffer.size()) > maxSamples)
-        {
-            displayBuffer.erase(displayBuffer.begin(),
-                               displayBuffer.end() - maxSamples);
-        }
-    }
+    // Regenerate waveform (in case waveform type changed)
+    generateWaveformCycle();
 
     repaint();
 }
 
-int SingleCycleView::findTriggerPoint(const std::vector<float>& samples) const
+float SingleCycleView::generateSampleForWaveform(double phase) const
 {
-    if (samples.size() < 2)
-        return 0;
+    const double twoPi = juce::MathConstants<double>::twoPi;
 
-    // Look for a rising zero crossing
-    for (size_t i = 1; i < samples.size() / 2; ++i)
+    // Wrap phase to 0-1 range
+    phase = phase - std::floor(phase);
+
+    switch (currentWaveform)
     {
-        float prev = samples[i - 1];
-        float curr = samples[i];
+        case OscillatorWaveform::Sine:
+            return static_cast<float>(std::sin(phase * twoPi));
 
-        // Rising zero crossing with hysteresis
-        if (prev < -TriggerHysteresis && curr >= TriggerHysteresis)
-            return static_cast<int>(i);
+        case OscillatorWaveform::Saw:
+            // Sawtooth: rises from -1 to 1 over the cycle
+            return static_cast<float>(2.0 * phase - 1.0);
+
+        case OscillatorWaveform::Square:
+            // Square wave: +1 for first half, -1 for second half
+            return (phase < 0.5) ? 1.0f : -1.0f;
+
+        case OscillatorWaveform::Triangle:
+            // Triangle: rises from -1 to 1 in first half, falls from 1 to -1 in second half
+            if (phase < 0.5)
+                return static_cast<float>(4.0 * phase - 1.0);
+            else
+                return static_cast<float>(3.0 - 4.0 * phase);
+
+        default:
+            return 0.0f;
+    }
+}
+
+void SingleCycleView::generateWaveformCycle()
+{
+    // Check if we're in Mix mode with multiple active voices
+    if (probeManager.getVoiceMode() == VoiceMode::Mix)
+    {
+        auto frequencies = probeManager.getActiveFrequencies();
+
+        if (frequencies.size() > 1)
+        {
+            // Mix mode: sum waveforms at different frequencies
+            // Use the lowest frequency as the base period
+            float lowestFreq = *std::min_element(frequencies.begin(), frequencies.end());
+
+            // Clear the buffer
+            std::fill(waveformCycle.begin(), waveformCycle.end(), 0.0f);
+
+            // For each sample position in one cycle of the lowest frequency
+            for (int i = 0; i < SamplesPerCycle; ++i)
+            {
+                double basePhase = static_cast<double>(i) / static_cast<double>(SamplesPerCycle);
+                float mixedSample = 0.0f;
+
+                // Add contribution from each active voice
+                for (float freq : frequencies)
+                {
+                    // Calculate how many cycles this frequency completes
+                    // relative to the lowest frequency
+                    double freqRatio = freq / lowestFreq;
+                    double voicePhase = basePhase * freqRatio;
+
+                    mixedSample += generateSampleForWaveform(voicePhase);
+                }
+
+                // Normalize by number of voices to prevent clipping
+                waveformCycle[i] = mixedSample / static_cast<float>(frequencies.size());
+            }
+
+            return;
+        }
     }
 
-    // If no trigger found, return 0 (start from beginning)
-    return 0;
+    // Single voice mode or only one voice active: generate single waveform
+    for (int i = 0; i < SamplesPerCycle; ++i)
+    {
+        double phase = static_cast<double>(i) / static_cast<double>(SamplesPerCycle);
+        waveformCycle[i] = generateSampleForWaveform(phase);
+    }
 }
 
 void SingleCycleView::drawGrid(juce::Graphics& g, juce::Rectangle<float> bounds)
 {
     g.setColour(juce::Colour(0xff2a2a2a));
 
-    // Vertical lines (phase divisions: 0%, 25%, 50%, 75%, 100%)
+    // Vertical lines (phase divisions: 0°, 90°, 180°, 270°, 360°)
     int numVerticalLines = 4;
     float xStep = bounds.getWidth() / numVerticalLines;
     for (int i = 1; i < numVerticalLines; ++i)
@@ -259,32 +280,17 @@ void SingleCycleView::drawWaveform(juce::Graphics& g, juce::Rectangle<float> bou
     if (samples.empty())
         return;
 
-    // Calculate samples per cycle based on frequency
-    float frequency = probeManager.getActiveFrequency();
-    double sampleRate = probeManager.getSampleRate();
-    int samplesPerCycle = static_cast<int>(sampleRate / frequency);
+    int numSamples = static_cast<int>(samples.size());
 
-    // Ensure we have at least one cycle worth of samples
-    if (static_cast<int>(samples.size()) < samplesPerCycle)
-        return;
-
-    // Find trigger point
-    int triggerOffset = findTriggerPoint(samples);
-
-    // Make sure we have enough samples after trigger for one complete cycle
-    if (triggerOffset + samplesPerCycle > static_cast<int>(samples.size()))
-        triggerOffset = std::max(0, static_cast<int>(samples.size()) - samplesPerCycle);
-
-    // Build path - draw exactly one cycle
+    // Build path
     juce::Path waveformPath;
-    float xScale = bounds.getWidth() / (samplesPerCycle - 1);
+    float xScale = bounds.getWidth() / (numSamples - 1);
     float yCenter = bounds.getCentreY();
     float yScale = bounds.getHeight() * 0.45f;  // Leave some margin
 
-    for (int i = 0; i < samplesPerCycle; ++i)
+    for (int i = 0; i < numSamples; ++i)
     {
-        float sample = samples[triggerOffset + i];
-        sample = juce::jlimit(-1.0f, 1.0f, sample);
+        float sample = juce::jlimit(-1.0f, 1.0f, samples[i]);
 
         float x = bounds.getX() + i * xScale;
         float y = yCenter - sample * yScale;
@@ -337,13 +343,11 @@ void SingleCycleView::mouseDown(const juce::MouseEvent& event)
     if (mixButtonBounds.contains(pos))
     {
         probeManager.setVoiceMode(VoiceMode::Mix);
-        displayBuffer.clear();  // Clear buffer when switching modes
         repaint();
     }
     else if (voiceButtonBounds.contains(pos))
     {
         probeManager.setVoiceMode(VoiceMode::SingleVoice);
-        displayBuffer.clear();  // Clear buffer when switching modes
         repaint();
     }
 }

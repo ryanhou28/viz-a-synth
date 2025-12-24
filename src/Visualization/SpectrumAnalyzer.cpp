@@ -210,12 +210,6 @@ void SpectrumAnalyzer::processFFT()
         smoothedSpectrum[i] = smoothingFactor * smoothedSpectrum[i] +
                               (1.0f - smoothingFactor) * dB;
     }
-
-    // Use declared DecayRate and deltaTime for gradual decay
-    for (auto& value : smoothedSpectrum)
-    {
-        value = value > MinDB ? value - (DecayRate * deltaTime) : MinDB;
-    }
 }
 
 //==============================================================================

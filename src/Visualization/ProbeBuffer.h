@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <array>
 #include <atomic>
+#include <vector>
 
 //==============================================================================
 /**
@@ -97,6 +98,9 @@ public:
     void clearVoiceFrequency(int voiceIndex);
     float getLowestActiveFrequency() const;
 
+    // Get all active voice frequencies (for mix mode waveform generation)
+    std::vector<float> getActiveFrequencies() const;
+
 private:
     ProbeBuffer probeBuffer;        // Single voice probe buffer
     ProbeBuffer mixProbeBuffer;     // Mixed output probe buffer
@@ -105,6 +109,10 @@ private:
     std::atomic<VoiceMode> voiceMode{VoiceMode::Mix};  // Default to Mix
     std::atomic<float> activeFrequency{440.0f};        // For single-cycle view
     std::atomic<double> sampleRate{44100.0};
+
+    // Track frequencies for each voice (for mix mode lowest frequency calculation)
+    static constexpr int MaxVoices = 8;
+    std::array<std::atomic<float>, MaxVoices> voiceFrequencies{};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ProbeManager)
 };

@@ -1,4 +1,5 @@
 #include "ProbeBuffer.h"
+#include <limits>
 
 //==============================================================================
 // ProbeBuffer Implementation
@@ -101,27 +102,42 @@ VoiceMode ProbeManager::getVoiceMode() const
     return voiceMode.load();
 }
 
-// Added tracking for active voice frequencies
-std::array<std::atomic<float>, 8> voiceFrequencies{}; // Initialize to 0
-
 void ProbeManager::setVoiceFrequency(int voiceIndex, float frequency)
 {
-    voiceFrequencies[voiceIndex].store(frequency);
+    if (voiceIndex >= 0 && voiceIndex < MaxVoices)
+        voiceFrequencies[voiceIndex].store(frequency);
 }
 
 void ProbeManager::clearVoiceFrequency(int voiceIndex)
 {
-    voiceFrequencies[voiceIndex].store(0.0f);
+    if (voiceIndex >= 0 && voiceIndex < MaxVoices)
+        voiceFrequencies[voiceIndex].store(0.0f);
 }
 
 float ProbeManager::getLowestActiveFrequency() const
 {
     float lowest = std::numeric_limits<float>::max();
-    for (const auto& freq : voiceFrequencies)
+    for (int i = 0; i < MaxVoices; ++i)
     {
-        float value = freq.load();
+        float value = voiceFrequencies[i].load();
         if (value > 0.0f && value < lowest)
             lowest = value;
     }
-    return (lowest == std::numeric_limits<float>::max()) ? 0.0f : lowest;
+    // If no active voices, fall back to the active frequency
+    return (lowest == std::numeric_limits<float>::max()) ? activeFrequency.load() : lowest;
+}
+
+std::vector<float> ProbeManager::getActiveFrequencies() const
+{
+    std::vector<float> frequencies;
+    frequencies.reserve(MaxVoices);
+
+    for (int i = 0; i < MaxVoices; ++i)
+    {
+        float value = voiceFrequencies[i].load();
+        if (value > 0.0f)
+            frequencies.push_back(value);
+    }
+
+    return frequencies;
 }

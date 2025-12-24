@@ -309,6 +309,16 @@ void VizASynthAudioProcessorEditor::timerCallback()
 {
     // Update probe button highlighting
     updateProbeButtons();
+
+    // Sync SingleCycleView waveform type with oscillator setting
+    int oscType = static_cast<int>(audioProcessor.getAPVTS().getRawParameterValue("oscType")->load());
+    switch (oscType)
+    {
+        case 0: singleCycleView.setWaveformType(OscillatorWaveform::Sine); break;
+        case 1: singleCycleView.setWaveformType(OscillatorWaveform::Saw); break;
+        case 2: singleCycleView.setWaveformType(OscillatorWaveform::Square); break;
+        default: singleCycleView.setWaveformType(OscillatorWaveform::Sine); break;
+    }
 }
 
 void VizASynthAudioProcessorEditor::updateProbeButtons()
