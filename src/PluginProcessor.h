@@ -114,6 +114,18 @@ public:
     // Probe system access
     ProbeManager& getProbeManager() { return probeManager; }
 
+    // Level metering
+    float getOutputLevel() const { return outputLevel.load(); }
+    bool isClipping() const { return clipping.load(); }
+    void resetClipping() { clipping.store(false); }
+
+    // Active notes for keyboard display
+    struct NoteInfo { int note; float velocity; };
+    std::vector<NoteInfo> getActiveNotes() const;
+
+    // Inject MIDI for virtual keyboard
+    void addMidiMessage(const juce::MidiMessage& msg);
+
     // Retrieve a specific voice by index
     VizASynthVoice* getVoice(int index) {
         if (index >= 0 && index < synth.getNumVoices()) {
@@ -127,6 +139,17 @@ private:
     juce::Synthesiser synth;
     juce::AudioProcessorValueTreeState apvts;
     ProbeManager probeManager;
+
+    // Level metering
+    std::atomic<float> outputLevel{0.0f};
+    std::atomic<bool> clipping{false};
+
+    // Active notes tracking
+    std::array<std::atomic<float>, 128> noteVelocities{};
+
+    // MIDI injection queue
+    juce::MidiBuffer injectedMidi;
+    juce::CriticalSection midiLock;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void updateVoiceParameters();

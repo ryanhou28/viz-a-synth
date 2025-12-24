@@ -231,6 +231,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout VizASynthAudioProcessor::cre
         juce::NormalisableRange<float>(0.001f, 5.0f, 0.001f, 0.5f), 0.3f,
         juce::AudioParameterFloatAttributes().withLabel("s")));
 
+    // Master volume (in dB)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "masterVolume", "Master Volume",
+        juce::NormalisableRange<float>(-60.0f, 0.0f, 0.1f), 0.0f,
+        juce::AudioParameterFloatAttributes().withLabel("dB")));
+
     return layout;
 }
 
@@ -331,9 +337,44 @@ bool VizASynthAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts)
     return true;
 }
 
+std::vector<VizASynthAudioProcessor::NoteInfo> VizASynthAudioProcessor::getActiveNotes() const
+{
+    std::vector<NoteInfo> notes;
+    for (int i = 0; i < 128; ++i)
+    {
+        float vel = noteVelocities[i].load();
+        if (vel > 0.0f)
+            notes.push_back({i, vel});
+    }
+    return notes;
+}
+
+void VizASynthAudioProcessor::addMidiMessage(const juce::MidiMessage& msg)
+{
+    juce::ScopedLock lock(midiLock);
+    injectedMidi.addEvent(msg, 0);
+}
+
 void VizASynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    // Merge injected MIDI messages
+    {
+        juce::ScopedLock lock(midiLock);
+        midiMessages.addEvents(injectedMidi, 0, buffer.getNumSamples(), 0);
+        injectedMidi.clear();
+    }
+
+    // Track note on/off for keyboard display
+    for (const auto metadata : midiMessages)
+    {
+        auto msg = metadata.getMessage();
+        if (msg.isNoteOn())
+            noteVelocities[msg.getNoteNumber()].store(msg.getFloatVelocity());
+        else if (msg.isNoteOff())
+            noteVelocities[msg.getNoteNumber()].store(0.0f);
+    }
 
     // Clear output buffer
     buffer.clear();
@@ -343,6 +384,22 @@ void VizASynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
 
     // Render synth
     synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
+
+    // Apply master volume
+    float masterVolumeDb = apvts.getRawParameterValue("masterVolume")->load();
+    float masterGain = juce::Decibels::decibelsToGain(masterVolumeDb);
+    buffer.applyGain(masterGain);
+
+    // Calculate output level (RMS) and check for clipping
+    float peakLevel = 0.0f;
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        float channelPeak = buffer.getMagnitude(channel, 0, buffer.getNumSamples());
+        peakLevel = std::max(peakLevel, channelPeak);
+    }
+    outputLevel.store(peakLevel);
+    if (peakLevel >= 1.0f)
+        clipping.store(true);
 
     // Probe mixed output for mix mode visualization
     // This captures the sum of all voices at the Output probe point
