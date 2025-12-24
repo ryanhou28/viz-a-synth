@@ -45,6 +45,8 @@ target_sources(VizASynth
         src/Visualization/Oscilloscope.cpp
         src/Visualization/SpectrumAnalyzer.cpp
         src/Visualization/SingleCycleView.cpp
+        src/UI/LevelMeter.cpp
+        src/UI/VirtualKeyboard.cpp
 )
 
 # Include directories

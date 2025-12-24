@@ -15,8 +15,8 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
                           throw std::runtime_error("No voices available to provide an oscillator.");
                       }())
 {
-    // Set editor size
-    setSize(1000, 600);
+    // Set editor size (expanded for keyboard)
+    setSize(1000, 700);
 
     // Add visualization components
     addAndMakeVisible(oscilloscope);
@@ -158,6 +158,34 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     releaseLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(releaseLabel);
 
+    // Setup master volume slider
+    masterVolumeSlider.setSliderStyle(juce::Slider::LinearVertical);
+    masterVolumeSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 20);
+    addAndMakeVisible(masterVolumeSlider);
+
+    masterVolumeLabel.setText("Volume", juce::dontSendNotification);
+    masterVolumeLabel.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(masterVolumeLabel);
+
+    // Setup level meter
+    levelMeter.setLevelCallback([this]() { return audioProcessor.getOutputLevel(); });
+    levelMeter.setClippingCallback(
+        [this]() { return audioProcessor.isClipping(); },
+        [this]() { audioProcessor.resetClipping(); });
+    addAndMakeVisible(levelMeter);
+
+    // Setup virtual keyboard
+    virtualKeyboard.setNoteCallback([this](const juce::MidiMessage& msg) {
+        audioProcessor.addMidiMessage(msg);
+    });
+    virtualKeyboard.setActiveNotesCallback([this]() {
+        std::vector<std::pair<int, float>> notes;
+        for (auto& info : audioProcessor.getActiveNotes())
+            notes.push_back({info.note, info.velocity});
+        return notes;
+    });
+    addAndMakeVisible(virtualKeyboard);
+
     // Create parameter attachments
     auto& apvts = audioProcessor.getAPVTS();
 
@@ -182,6 +210,9 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     releaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "release", releaseSlider);
 
+    masterVolumeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "masterVolume", masterVolumeSlider);
+
     // Start timer for UI updates (60 FPS)
     startTimerHz(60);
 }
@@ -205,11 +236,32 @@ void VizASynthAudioProcessorEditor::paint(juce::Graphics& g)
     // Control panel background
     g.setColour(juce::Colour(0xff2a2a2a));
     g.fillRoundedRectangle(20, 60, 350, 520, 10);
+
+    // Keyboard panel background
+    g.fillRoundedRectangle(20, 590, getWidth() - 40, 100, 10);
 }
 
 void VizASynthAudioProcessorEditor::resized()
 {
     auto bounds = getLocalBounds();
+
+    // Bottom area for keyboard and volume controls
+    auto bottomArea = bounds.removeFromBottom(110).reduced(25, 5);
+
+    // Master volume and level meter on the right
+    auto volumeSection = bottomArea.removeFromRight(100);
+    volumeSection = volumeSection.reduced(5, 0);
+
+    masterVolumeLabel.setBounds(volumeSection.removeFromTop(18));
+
+    auto sliderAndMeter = volumeSection;
+    auto meterArea = sliderAndMeter.removeFromRight(20);
+    levelMeter.setBounds(meterArea.reduced(0, 2));
+
+    masterVolumeSlider.setBounds(sliderAndMeter);
+
+    // Virtual keyboard fills the rest
+    virtualKeyboard.setBounds(bottomArea.reduced(0, 5));
 
     // Control panel area (left side)
     auto controlArea = bounds.removeFromLeft(370).reduced(30, 70);

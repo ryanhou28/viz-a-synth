@@ -4,6 +4,8 @@
 #include "Visualization/Oscilloscope.h"
 #include "Visualization/SpectrumAnalyzer.h"
 #include "Visualization/SingleCycleView.h"
+#include "UI/LevelMeter.h"
+#include "UI/VirtualKeyboard.h"
 
 //==============================================================================
 /**
@@ -76,6 +78,16 @@ private:
     juce::Label sustainLabel;
     juce::Label releaseLabel;
 
+    // Master volume
+    juce::Slider masterVolumeSlider;
+    juce::Label masterVolumeLabel;
+
+    // Level meter
+    LevelMeter levelMeter;
+
+    // Virtual keyboard
+    VirtualKeyboard virtualKeyboard;
+
     // Parameter attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oscTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cutoffAttachment;
@@ -84,6 +96,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> decayAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> sustainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> releaseAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterVolumeAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VizASynthAudioProcessorEditor)
 };
