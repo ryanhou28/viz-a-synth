@@ -8,7 +8,7 @@
 VizASynthVoice::VizASynthVoice()
 {
     // Initialize oscillator with sine wave
-    oscillator.initialise([](float x) { return std::sin(x); }, 128);
+    oscillator.setWaveform(OscillatorWaveform::Sine);
 
     // Initialize filter as low-pass
     filter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
@@ -37,6 +37,14 @@ void VizASynthVoice::startNote(int midiNoteNumber, float vel, juce::SynthesiserS
 
     // Start envelope
     adsr.noteOn();
+
+    // Set this as the active voice for probing (most recently triggered)
+    if (probeManager != nullptr)
+    {
+        probeManager->setActiveVoice(voiceIndex);
+        probeManager->setActiveFrequency(static_cast<float>(frequency));
+        probeManager->setVoiceFrequency(voiceIndex, frequency);
+    }
 }
 
 void VizASynthVoice::stopNote(float, bool allowTailOff)
@@ -45,6 +53,12 @@ void VizASynthVoice::stopNote(float, bool allowTailOff)
 
     if (!allowTailOff)
         clearCurrentNote();
+
+    // Clear frequency on stopNote
+    if (probeManager != nullptr)
+    {
+        probeManager->clearVoiceFrequency(voiceIndex);
+    }
 }
 
 void VizASynthVoice::pitchWheelMoved(int) {}
@@ -55,29 +69,45 @@ void VizASynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
     if (!isVoiceActive())
         return;
 
-    auto outputBlock = juce::dsp::AudioBlock<float>(outputBuffer).getSubBlock(startSample, numSamples);
-    auto context = juce::dsp::ProcessContextReplacing<float>(outputBlock);
+    // Check if this is the active voice for probing
+    bool shouldProbe = (probeManager != nullptr) && (probeManager->getActiveVoice() == voiceIndex);
+    ProbePoint activeProbePoint = shouldProbe ? probeManager->getActiveProbe() : ProbePoint::Output;
 
-    // Generate oscillator output
-    oscillator.process(context);
-
-    // Apply filter
-    filter.process(context);
-
-    // Apply ADSR envelope
+    // Process sample by sample to enable probing at different points
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        auto env = adsr.getNextSample();
+        // Generate oscillator sample
+        float oscOut = oscillator.processSample();
+
+        // Probe oscillator output
+        if (shouldProbe && activeProbePoint == ProbePoint::Oscillator)
+            probeManager->getProbeBuffer().push(oscOut);
+
+        // Apply filter
+        float filtered = filter.processSample(0, oscOut);
+
+        // Probe post-filter
+        if (shouldProbe && activeProbePoint == ProbePoint::PostFilter)
+            probeManager->getProbeBuffer().push(filtered);
+
+        // Apply envelope
+        float env = adsr.getNextSample();
 
         if (!adsr.isActive())
         {
             clearCurrentNote();
-            break;
+            return;
         }
 
+        float finalOut = filtered * env * velocity;
+
+        // Probe final output
+        if (shouldProbe && activeProbePoint == ProbePoint::Output)
+            probeManager->getProbeBuffer().push(finalOut);
+
+        // Write to output buffer (stereo)
         for (int channel = 0; channel < outputBuffer.getNumChannels(); ++channel)
-            outputBuffer.setSample(channel, startSample + sample,
-                                   outputBuffer.getSample(channel, startSample + sample) * env * velocity);
+            outputBuffer.addSample(channel, startSample + sample, finalOut);
     }
 }
 
@@ -90,7 +120,7 @@ void VizASynthVoice::prepareToPlay(double sampleRate, int samplesPerBlock)
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = 1;
 
-    oscillator.prepare(spec);
+    oscillator.prepare(sampleRate);
     filter.prepare(spec);
     filter.reset();
 
@@ -102,23 +132,16 @@ void VizASynthVoice::setOscillatorType(int type)
     switch (type)
     {
         case 0: // Sine
-            oscillator.initialise([](float x) { return std::sin(x); }, 128);
+            oscillator.setWaveform(OscillatorWaveform::Sine);
             break;
-        case 1: // Saw (naive for now, will add polyBLEP later)
-            oscillator.initialise([](float x) { return juce::jmap(x, -juce::MathConstants<float>::pi, juce::MathConstants<float>::pi, -1.0f, 1.0f); }, 128);
+        case 1: // Saw (PolyBLEP anti-aliased)
+            oscillator.setWaveform(OscillatorWaveform::Saw);
             break;
-        case 2: // Square (naive for now, will add polyBLEP later)
-            oscillator.initialise([](float x) { return x < 0.0f ? -1.0f : 1.0f; }, 128);
+        case 2: // Square (PolyBLEP anti-aliased)
+            oscillator.setWaveform(OscillatorWaveform::Square);
             break;
         default:
             break;
-    }
-
-    // Maintain current frequency
-    if (isVoiceActive())
-    {
-        auto frequency = juce::MidiMessage::getMidiNoteInHertz(currentMidiNote);
-        oscillator.setFrequency(frequency);
     }
 }
 
@@ -152,7 +175,12 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
 {
     // Add voices to synthesizer
     for (int i = 0; i < 8; ++i)
-        synth.addVoice(new VizASynthVoice());
+    {
+        auto* voice = new VizASynthVoice();
+        voice->setVoiceIndex(i);
+        voice->setProbeManager(&probeManager);
+        synth.addVoice(voice);
+    }
 
     // Add sound
     synth.addSound(new VizASynthSound());
@@ -281,6 +309,7 @@ void VizASynthAudioProcessor::changeProgramName(int, const juce::String&)
 void VizASynthAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     synth.setCurrentPlaybackSampleRate(sampleRate);
+    probeManager.setSampleRate(sampleRate);
 
     for (int i = 0; i < synth.getNumVoices(); ++i)
     {
@@ -314,6 +343,19 @@ void VizASynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
 
     // Render synth
     synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
+
+    // Probe mixed output for mix mode visualization
+    // This captures the sum of all voices at the Output probe point
+    ProbePoint activeProbe = probeManager.getActiveProbe();
+    if (activeProbe == ProbePoint::Output)
+    {
+        const int numSamples = buffer.getNumSamples();
+        const float* channelData = buffer.getReadPointer(0);  // Left channel
+        for (int i = 0; i < numSamples; ++i)
+        {
+            probeManager.getMixProbeBuffer().push(channelData[i]);
+        }
+    }
 }
 
 //==============================================================================
