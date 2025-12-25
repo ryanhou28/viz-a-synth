@@ -4,6 +4,7 @@
 #include "../../Visualization/Core/VisualizationPanel.h"
 #include "../../Visualization/Core/PanelRegistry.h"
 #include "../../Core/Configuration.h"
+#include "../../Core/Types.h"
 #include <vector>
 #include <memory>
 
@@ -18,7 +19,8 @@ class ProbeManager;
  * Features:
  *   - Configurable grid layout (rows x cols)
  *   - Panel type selection via dropdown
- *   - Resizable dividers (StretchableLayoutManager)
+ *   - Per-panel probe point selection
+ *   - Resizable dividers using StretchableLayoutManager
  *   - Dynamic panel swapping
  *   - Configuration persistence
  */
@@ -74,6 +76,16 @@ public:
      */
     std::string getPanelType(int row, int col) const;
 
+    /**
+     * Set the probe point for a specific panel.
+     */
+    void setPanelProbe(int row, int col, ProbePoint probe);
+
+    /**
+     * Get the probe point for a specific panel.
+     */
+    ProbePoint getPanelProbe(int row, int col) const;
+
     //=========================================================================
     // Global Settings
     //=========================================================================
@@ -116,7 +128,7 @@ public:
 
 private:
     /**
-     * Panel slot containing the panel and its type selector.
+     * Panel slot containing the panel, type selector, and probe selector.
      */
     struct PanelSlot : public juce::Component {
         PanelSlot(PanelContainer& owner, int row, int col);
@@ -126,9 +138,25 @@ private:
 
         std::unique_ptr<VisualizationPanel> panel;
         std::unique_ptr<juce::ComboBox> typeSelector;
+        std::unique_ptr<juce::ComboBox> probeSelector;
         PanelContainer& container;
         int gridRow;
         int gridCol;
+        ProbePoint selectedProbe = ProbePoint::Output;
+    };
+
+    /**
+     * Row container that holds columns with horizontal dividers.
+     */
+    struct RowContainer : public juce::Component {
+        RowContainer(PanelContainer& owner, int rowIndex);
+
+        void resized() override;
+
+        PanelContainer& container;
+        int row;
+        juce::StretchableLayoutManager columnLayout;
+        std::vector<std::unique_ptr<juce::StretchableLayoutResizerBar>> columnDividers;
     };
 
     /**
@@ -142,9 +170,24 @@ private:
     void updateTypeSelectorOptions(juce::ComboBox& selector);
 
     /**
+     * Update the probe selector options.
+     */
+    void updateProbeSelectorOptions(juce::ComboBox& selector);
+
+    /**
      * Handle panel type change from dropdown.
      */
     void onPanelTypeChanged(int row, int col, int selectedId);
+
+    /**
+     * Handle probe point change from dropdown.
+     */
+    void onProbeChanged(int row, int col, int selectedId);
+
+    /**
+     * Rebuild the layout managers after grid size change.
+     */
+    void rebuildLayoutManagers();
 
     /**
      * Get the index for a row/col position.
@@ -156,9 +199,15 @@ private:
     int numCols;
     std::vector<std::unique_ptr<PanelSlot>> slots;
 
-    // Layout
+    // Stretchable layout for rows (vertical dividers between rows)
+    juce::StretchableLayoutManager rowLayout;
+    std::vector<std::unique_ptr<juce::StretchableLayoutResizerBar>> rowDividers;
+    std::vector<std::unique_ptr<RowContainer>> rowContainers;
+
+    // Layout constants
     static constexpr int HeaderHeight = 25;
     static constexpr int DividerSize = 4;
+    static constexpr double MinPanelSize = 100.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PanelContainer)
 };

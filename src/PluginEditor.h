@@ -1,7 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
-#include "Visualization/Oscilloscope.h"
+#include "Visualization/TimeDomain/Oscilloscope.h"
 #include "Visualization/SpectrumAnalyzer.h"
 #include "Visualization/SingleCycleView.h"
 #include "Visualization/EnvelopeVisualizer.h"

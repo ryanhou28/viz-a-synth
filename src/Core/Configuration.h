@@ -19,6 +19,29 @@ namespace vizasynth {
  * Configuration Files:
  *   - config/layout.json: Window size, panel layout, margins
  *   - config/theme.json: Colors, fonts, visual styling
+ *
+ * Rapid Iteration with JUCE_LIVE_CONSTANT:
+ *   For quick parameter tweaking during development, use JUCE's built-in
+ *   JUCE_LIVE_CONSTANT macro. Values can be adjusted in real-time by editing
+ *   the source and the debugger will update them without recompiling.
+ *
+ *   Example usage in visualization code:
+ *   @code
+ *   void MyPanel::paint(juce::Graphics& g) {
+ *       float lineThickness = JUCE_LIVE_CONSTANT(2.0f);
+ *       int gridDivisions = JUCE_LIVE_CONSTANT(10);
+ *       // ... drawing code using these values ...
+ *   }
+ *   @endcode
+ *
+ *   For color tweaking:
+ *   @code
+ *   juce::Colour gridColor(JUCE_LIVE_CONSTANT(0x40ffffff));
+ *   @endcode
+ *
+ *   Note: JUCE_LIVE_CONSTANT only works in debug builds with a debugger attached.
+ *   Once values are finalized, move them to config/theme.json or config/layout.json
+ *   and use ConfigurationManager accessors for production code.
  */
 class ConfigurationManager : public juce::ChangeBroadcaster {
 public:

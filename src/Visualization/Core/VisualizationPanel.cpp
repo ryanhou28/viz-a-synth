@@ -29,6 +29,13 @@ void VisualizationPanel::setSampleRate(float rate) {
     repaint();
 }
 
+void VisualizationPanel::setProbePoint(ProbePoint probe) {
+    currentProbePoint = probe;
+    // Subclasses should override this to update their data source
+    // based on the new probe point
+    repaint();
+}
+
 //=============================================================================
 // Freeze/Clear
 //=============================================================================

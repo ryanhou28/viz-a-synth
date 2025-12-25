@@ -137,6 +137,52 @@
         "step": 0.5,
         "defaultValue": 10.0
       }
+    },
+    "oscilloscope": {
+      "triggerHysteresis": 0.01,
+      "minAmplitudeThreshold": 0.001,
+      "overlay": {
+        "probeIndicator": {
+          "x": -50,
+          "y": 5,
+          "width": 45,
+          "height": 15
+        },
+        "timeWindow": {
+          "x": 5,
+          "y": 5,
+          "width": 60,
+          "height": 15
+        },
+        "frequencyInfo": {
+          "y": 5,
+          "height": 14
+        },
+        "amplitudeInfo": {
+          "x": 5,
+          "y": 20,
+          "lineHeight": 12
+        },
+        "sampleRateInfo": {
+          "x": -160,
+          "y": -15,
+          "width": 155,
+          "height": 12
+        }
+      },
+      "amplitudeMarkers": {
+        "dashLength": 4.0,
+        "gapLength": 4.0,
+        "lineWidth": 1.0,
+        "labelWidth": 30,
+        "labelHeight": 12
+      },
+      "voiceModeToggle": {
+        "buttonWidth": 35,
+        "buttonHeight": 18,
+        "spacing": 2,
+        "padding": 8
+      }
     }
   }
 }

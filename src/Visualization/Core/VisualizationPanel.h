@@ -92,6 +92,17 @@ public:
      */
     float getSampleRate() const { return sampleRate; }
 
+    /**
+     * Set the probe point this panel is monitoring.
+     * Panels can override this to update their data source accordingly.
+     */
+    virtual void setProbePoint(ProbePoint probe);
+
+    /**
+     * Get the current probe point.
+     */
+    ProbePoint getProbePoint() const { return currentProbePoint; }
+
     //=========================================================================
     // Freeze/Clear Functionality
     //=========================================================================
@@ -240,6 +251,7 @@ protected:
     float sampleRate = 44100.0f;
     bool frozen = false;
     bool showEquations = false;
+    ProbePoint currentProbePoint = ProbePoint::Output;
 
     // Panel margins
     float marginTop = 25.0f;
