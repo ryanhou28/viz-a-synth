@@ -128,6 +128,38 @@ void Oscilloscope::renderOverlay(juce::Graphics& g)
                    juce::Justification::centred);
     }
 
+    // Draw detected frequency with dual display (Hz and normalized)
+    const auto& samples = frozen ? frozenBuffer : displayBuffer;
+    float detectedFreq = detectFundamentalFrequency(samples);
+    if (detectedFreq > 20.0f && detectedFreq < sampleRate / 2.0f) {
+        auto freqValue = FrequencyValue::fromHz(detectedFreq, sampleRate);
+        float periodMs = 1000.0f / detectedFreq;
+
+        g.setColour(getDimTextColour());
+        g.setFont(10.0f);
+
+        // Show period and frequency with dual display
+        juce::String periodText = "T = " + juce::String(periodMs, 2) + " ms";
+        juce::String freqText = juce::String(freqValue.toDualString(sampleRate));
+        juce::String noteText = juce::String(freqValue.toNoteName(sampleRate));
+
+        // Build the full info string
+        juce::String infoText = periodText + " | f0 = " + freqText;
+        if (noteText.isNotEmpty()) {
+            infoText += " (" + noteText + ")";
+        }
+
+        g.drawText(infoText, static_cast<int>(bounds.getX()), static_cast<int>(bounds.getY() - 15),
+                   static_cast<int>(bounds.getWidth()), 12, juce::Justification::centred);
+    }
+
+    // Draw sample rate info
+    g.setColour(getDimTextColour());
+    g.setFont(10.0f);
+    juce::String fsText = "fs: " + juce::String(formatSampleRate(sampleRate));
+    g.drawText(fsText, static_cast<int>(bounds.getRight() - 80), static_cast<int>(bounds.getY() - 15),
+               75, 12, juce::Justification::right);
+
     // Voice indicator (only show in single voice mode)
     if (probeManager.getVoiceMode() == VoiceMode::SingleVoice) {
         int activeVoice = probeManager.getActiveVoice();
@@ -227,6 +259,53 @@ int Oscilloscope::findTriggerPoint(const std::vector<float>& samples) const
     }
 
     return 0;
+}
+
+float Oscilloscope::detectFundamentalFrequency(const std::vector<float>& samples) const
+{
+    if (samples.size() < 10)
+        return 0.0f;
+
+    // Find rising zero crossings and measure the period between them
+    std::vector<size_t> crossings;
+
+    for (size_t i = 1; i < samples.size(); ++i) {
+        float prev = samples[i - 1];
+        float curr = samples[i];
+
+        // Rising zero crossing with hysteresis
+        if (prev < -TriggerHysteresis && curr >= TriggerHysteresis) {
+            crossings.push_back(i);
+        }
+    }
+
+    // Need at least 2 crossings to measure a period
+    if (crossings.size() < 2)
+        return 0.0f;
+
+    // Calculate average period from multiple crossings for better accuracy
+    float totalPeriod = 0.0f;
+    int numPeriods = 0;
+
+    for (size_t i = 1; i < crossings.size(); ++i) {
+        size_t period = crossings[i] - crossings[i - 1];
+
+        // Filter out unreasonably short or long periods (20 Hz to 20 kHz)
+        float minPeriodSamples = sampleRate / 20000.0f;
+        float maxPeriodSamples = sampleRate / 20.0f;
+
+        if (period >= static_cast<size_t>(minPeriodSamples) &&
+            period <= static_cast<size_t>(maxPeriodSamples)) {
+            totalPeriod += static_cast<float>(period);
+            numPeriods++;
+        }
+    }
+
+    if (numPeriods == 0)
+        return 0.0f;
+
+    float avgPeriod = totalPeriod / numPeriods;
+    return sampleRate / avgPeriod;
 }
 
 void Oscilloscope::drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds,

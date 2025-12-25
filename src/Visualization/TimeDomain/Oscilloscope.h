@@ -2,6 +2,7 @@
 
 #include "../Core/VisualizationPanel.h"
 #include "../ProbeBuffer.h"
+#include "../../Core/FrequencyValue.h"
 #include <vector>
 
 namespace vizasynth {
@@ -81,6 +82,12 @@ private:
      * Find a good trigger point (rising zero crossing).
      */
     int findTriggerPoint(const std::vector<float>& samples) const;
+
+    /**
+     * Detect fundamental frequency from waveform using zero-crossing analysis.
+     * Returns 0 if no valid frequency detected.
+     */
+    float detectFundamentalFrequency(const std::vector<float>& samples) const;
 
     /**
      * Draw the waveform path.
