@@ -1,6 +1,8 @@
 #include "ProbeBuffer.h"
 #include <limits>
 
+namespace vizasynth {
+
 //==============================================================================
 // ProbeBuffer Implementation
 //==============================================================================
@@ -141,3 +143,5 @@ std::vector<float> ProbeManager::getActiveFrequencies() const
 
     return frequencies;
 }
+
+} // namespace vizasynth

@@ -7,6 +7,7 @@
 #include "Visualization/EnvelopeVisualizer.h"
 #include "UI/LevelMeter.h"
 #include "UI/VirtualKeyboard.h"
+#include "Core/Configuration.h"
 
 //==============================================================================
 /**
@@ -23,7 +24,8 @@ enum class VisualizationMode
  * Main editor UI for Viz-A-Synth
  */
 class VizASynthAudioProcessorEditor : public juce::AudioProcessorEditor,
-                                       private juce::Timer
+                                       private juce::Timer,
+                                       public juce::ChangeListener
 {
 public:
     VizASynthAudioProcessorEditor(VizASynthAudioProcessor&);
@@ -35,9 +37,11 @@ public:
 
 private:
     void timerCallback() override;
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     void updateProbeButtons();
     void updateVisualizationMode();
     void setVisualizationMode(VisualizationMode mode);
+    void applyThemeToComponents();
 
     VizASynthAudioProcessor& audioProcessor;
 
@@ -45,10 +49,10 @@ private:
     int lastActiveNoteCount = 0;
 
     // Visualization
-    Oscilloscope oscilloscope;
-    SpectrumAnalyzer spectrumAnalyzer;
-    SingleCycleView singleCycleView;
-    EnvelopeVisualizer envelopeVisualizer;
+    vizasynth::Oscilloscope oscilloscope;
+    vizasynth::SpectrumAnalyzer spectrumAnalyzer;
+    vizasynth::SingleCycleView singleCycleView;
+    vizasynth::EnvelopeVisualizer envelopeVisualizer;
     VisualizationMode currentVizMode = VisualizationMode::Oscilloscope;
 
     // Visualization mode selector

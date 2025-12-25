@@ -6,6 +6,8 @@
 #include <vector>
 #include <array>
 
+namespace vizasynth {
+
 //==============================================================================
 /**
  * Spectrum Analyzer visualization component.
@@ -90,3 +92,5 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzer)
 };
+
+} // namespace vizasynth

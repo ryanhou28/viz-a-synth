@@ -36,24 +36,21 @@ juce_add_plugin(VizASynth
     VST3_CATEGORIES Instrument Synth
 )
 
-# Source files
-target_sources(VizASynth
-    PRIVATE
-        src/PluginProcessor.cpp
-        src/PluginEditor.cpp
-        src/Visualization/ProbeBuffer.cpp
-        src/Visualization/Oscilloscope.cpp
-        src/Visualization/SpectrumAnalyzer.cpp
-        src/Visualization/SingleCycleView.cpp
-        src/Visualization/EnvelopeVisualizer.cpp
-        src/UI/LevelMeter.cpp
-        src/UI/VirtualKeyboard.cpp
+# Automatically find all source files
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
+
+target_sources(VizASynth PRIVATE ${SOURCES})
 
 # Include directories
 target_include_directories(VizASynth
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/Core
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/DSP
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/Visualization
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/UI
 )
 
 # Compile definitions
@@ -71,6 +68,7 @@ target_link_libraries(VizASynth
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
+        juce::juce_data_structures
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags

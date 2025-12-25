@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_basics/juce_audio_basics.h>
+#include "../Core/Configuration.h"
 #include <functional>
 
 class LevelMeter : public juce::Component, private juce::Timer

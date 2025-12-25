@@ -1,5 +1,8 @@
 #include "SingleCycleView.h"
+#include "../Core/Configuration.h"
 #include <cmath>
+
+namespace vizasynth {
 
 //==============================================================================
 SingleCycleView::SingleCycleView(ProbeManager& pm, PolyBLEPOscillator& osc)
@@ -23,10 +26,11 @@ SingleCycleView::~SingleCycleView()
 //==============================================================================
 void SingleCycleView::paint(juce::Graphics& g)
 {
+    auto& config = ConfigurationManager::getInstance();
     auto bounds = getLocalBounds().toFloat().reduced(2.0f);
 
     // Background
-    g.setColour(juce::Colour(0xff0a0a0a));
+    g.setColour(config.getPanelBackgroundColour());
     g.fillRoundedRectangle(bounds, 4.0f);
 
     // Inset for the actual scope area
@@ -61,9 +65,11 @@ void SingleCycleView::paint(juce::Graphics& g)
     juce::String probeText;
     switch (probeManager.getActiveProbe())
     {
-        case ProbePoint::Oscillator: probeText = "OSC"; break;
-        case ProbePoint::PostFilter: probeText = "FILT"; break;
-        case ProbePoint::Output:     probeText = "OUT"; break;
+        case ProbePoint::Oscillator:   probeText = "OSC"; break;
+        case ProbePoint::PostFilter:   probeText = "FILT"; break;
+        case ProbePoint::PostEnvelope: probeText = "ENV"; break;
+        case ProbePoint::Output:       probeText = "OUT"; break;
+        case ProbePoint::Mix:          probeText = "MIX"; break;
     }
 
     g.drawText(probeText, static_cast<int>(bounds.getRight() - 50),
@@ -71,7 +77,7 @@ void SingleCycleView::paint(juce::Graphics& g)
                juce::Justification::centredRight);
 
     // Draw "CYCLE" label and waveform type
-    g.setColour(juce::Colours::grey);
+    g.setColour(config.getTextDimColour());
     juce::String waveformName;
     switch (currentWaveform)
     {
@@ -100,7 +106,7 @@ void SingleCycleView::paint(juce::Graphics& g)
     // Draw frozen indicator
     if (frozen)
     {
-        g.setColour(juce::Colours::red.withAlpha(0.8f));
+        g.setColour(config.getAccentColour().withAlpha(0.8f));
         g.drawText("FROZEN", static_cast<int>(bounds.getCentreX() - 30),
                    static_cast<int>(bounds.getY() + 5), 60, 15,
                    juce::Justification::centred);
@@ -130,13 +136,17 @@ void SingleCycleView::clearFrozenTrace()
 
 juce::Colour SingleCycleView::getProbeColour(ProbePoint probe)
 {
+    auto& config = ConfigurationManager::getInstance();
+
     switch (probe)
     {
-        case ProbePoint::Oscillator: return juce::Colour(0xffff9500);  // Orange
-        case ProbePoint::PostFilter: return juce::Colour(0xffbb86fc);  // Purple
-        case ProbePoint::Output:     return juce::Colour(0xff00e5ff);  // Cyan
-        default:                     return juce::Colours::white;
+        case ProbePoint::Oscillator:   return config.getProbeColour("oscillator");
+        case ProbePoint::PostFilter:   return config.getProbeColour("filter");
+        case ProbePoint::PostEnvelope: return config.getProbeColour("envelope");
+        case ProbePoint::Output:       return config.getProbeColour("output");
+        case ProbePoint::Mix:          return config.getProbeColour("mix");
     }
+    return config.getTextColour();
 }
 
 //==============================================================================
@@ -234,7 +244,9 @@ void SingleCycleView::generateWaveformCycle()
 
 void SingleCycleView::drawGrid(juce::Graphics& g, juce::Rectangle<float> bounds)
 {
-    g.setColour(juce::Colour(0xff2a2a2a));
+    auto& config = ConfigurationManager::getInstance();
+
+    g.setColour(config.getGridColour());
 
     // Vertical lines (phase divisions: 0°, 90°, 180°, 270°, 360°)
     int numVerticalLines = 4;
@@ -255,12 +267,12 @@ void SingleCycleView::drawGrid(juce::Graphics& g, juce::Rectangle<float> bounds)
     }
 
     // Center line (zero crossing) - slightly brighter
-    g.setColour(juce::Colour(0xff3a3a3a));
+    g.setColour(config.getGridMajorColour());
     float centerY = bounds.getCentreY();
     g.drawHorizontalLine(static_cast<int>(centerY), bounds.getX(), bounds.getRight());
 
     // Phase labels at bottom
-    g.setColour(juce::Colours::grey.darker());
+    g.setColour(config.getTextDimColour());
     g.setFont(9.0f);
     g.drawText("0", static_cast<int>(bounds.getX()), static_cast<int>(bounds.getBottom() + 2),
                20, 12, juce::Justification::centred);
@@ -308,6 +320,8 @@ void SingleCycleView::drawWaveform(juce::Graphics& g, juce::Rectangle<float> bou
 
 void SingleCycleView::drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<float> bounds)
 {
+    auto& config = ConfigurationManager::getInstance();
+
     // Position in bottom right corner
     float buttonWidth = 35.0f;
     float buttonHeight = 18.0f;
@@ -322,17 +336,22 @@ void SingleCycleView::drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<flo
 
     bool isMixMode = probeManager.getVoiceMode() == VoiceMode::Mix;
 
+    auto activeButtonColour = config.getGridMajorColour();
+    auto inactiveButtonColour = config.getGridColour();
+    auto activeTextColour = config.getTextColour();
+    auto inactiveTextColour = config.getTextDimColour();
+
     // Draw Mix button
-    g.setColour(isMixMode ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff2a2a2a));
+    g.setColour(isMixMode ? activeButtonColour : inactiveButtonColour);
     g.fillRoundedRectangle(mixButtonBounds, 3.0f);
-    g.setColour(isMixMode ? juce::Colours::white : juce::Colours::grey);
+    g.setColour(isMixMode ? activeTextColour : inactiveTextColour);
     g.setFont(10.0f);
     g.drawText("Mix", mixButtonBounds, juce::Justification::centred);
 
     // Draw Voice button
-    g.setColour(!isMixMode ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff2a2a2a));
+    g.setColour(!isMixMode ? activeButtonColour : inactiveButtonColour);
     g.fillRoundedRectangle(voiceButtonBounds, 3.0f);
-    g.setColour(!isMixMode ? juce::Colours::white : juce::Colours::grey);
+    g.setColour(!isMixMode ? activeTextColour : inactiveTextColour);
     g.drawText("Voice", voiceButtonBounds, juce::Justification::centred);
 }
 
@@ -351,3 +370,5 @@ void SingleCycleView::mouseDown(const juce::MouseEvent& event)
         repaint();
     }
 }
+
+} // namespace vizasynth

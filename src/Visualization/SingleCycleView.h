@@ -5,6 +5,8 @@
 #include "DSP/PolyBLEPOscillator.h"
 #include <vector>
 
+namespace vizasynth {
+
 //==============================================================================
 /**
  * Single-Cycle visualization component.
@@ -76,3 +78,5 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SingleCycleView)
 };
+
+} // namespace vizasynth

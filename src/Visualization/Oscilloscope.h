@@ -4,6 +4,8 @@
 #include "ProbeBuffer.h"
 #include <vector>
 
+namespace vizasynth {
+
 //==============================================================================
 /**
  * Oscilloscope visualization component.
@@ -71,3 +73,5 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Oscilloscope)
 };
+
+} // namespace vizasynth

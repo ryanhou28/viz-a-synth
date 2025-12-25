@@ -5,7 +5,7 @@ An interactive synthesizer with real-time signal visualization. Built with JUCE 
 ## Dependencies
 
 ### Required
-- **CMake** 3.22 or higher
+- **CMake** 3.18 or higher
 
 ### Automatically Fetched
 - **JUCE 8.0.4** (fetched via CMake FetchContent)

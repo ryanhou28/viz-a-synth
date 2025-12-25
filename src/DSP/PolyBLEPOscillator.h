@@ -3,6 +3,8 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <cmath>
 
+namespace vizasynth {
+
 /**
  * Waveform types for the oscillator
  */
@@ -171,3 +173,5 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PolyBLEPOscillator)
 };
+
+} // namespace vizasynth

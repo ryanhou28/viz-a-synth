@@ -1,29 +1,12 @@
 #pragma once
 
 #include <juce_audio_basics/juce_audio_basics.h>
+#include "../Core/Types.h"
 #include <array>
 #include <atomic>
 #include <vector>
 
-//==============================================================================
-/**
- * Probe points in the signal chain for visualization
- */
-enum class ProbePoint
-{
-    Oscillator = 0,  // Raw oscillator output
-    PostFilter,      // After filter, before envelope
-    Output           // Final voice output (post-envelope)
-};
-
-/**
- * Voice visualization mode
- */
-enum class VoiceMode
-{
-    Mix,         // Show sum of all voices (default)
-    SingleVoice  // Show only the most recently triggered voice
-};
+namespace vizasynth {
 
 //==============================================================================
 /**
@@ -116,3 +99,5 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ProbeManager)
 };
+
+} // namespace vizasynth

@@ -1,0 +1,92 @@
+{
+  "colors": {
+    "background": "#1a1a2e",
+    "panelBackground": "#16213e",
+    "grid": "#2d2d44",
+    "gridMajor": "#3d3d54",
+    "text": "#e0e0e0",
+    "textDim": "#808080",
+    "textHighlight": "#ffffff",
+    "accent": "#0f3460",
+    "probes": {
+      "oscillator": "#ff9500",
+      "filter": "#bb86fc",
+      "envelope": "#03dac6",
+      "output": "#00e5ff",
+      "mix": "#ff5722"
+    },
+    "waveform": {
+      "primary": "#4CAF50",
+      "ghost": "#4CAF5066"
+    },
+    "poleZero": {
+      "pole": "#ff4444",
+      "zero": "#4444ff",
+      "unitCircle": "#888888",
+      "stable": "#00ff0033",
+      "unstable": "#ff000033"
+    },
+    "buttons": {
+      "default": "#16213e",
+      "hover": "#1f2d4d",
+      "active": "#0f3460",
+      "toggleOn": "#8b0000",
+      "text": "#e0e0e0",
+      "textActive": "#ffffff"
+    },
+    "sliders": {
+      "thumb": "#5c9fd4",
+      "thumbHover": "#7ab3e0",
+      "track": "#2d2d44",
+      "rotaryFill": "#5c9fd4",
+      "rotaryOutline": "#2d2d44",
+      "textBox": "#1a1a2e",
+      "textBoxText": "#e0e0e0",
+      "textBoxOutline": "#3d3d54"
+    },
+    "envelope": {
+      "background": "#1e1e1e",
+      "grid": "#333333",
+      "attack": "#4caf50",
+      "decay": "#ffc107",
+      "sustain": "#2196f3",
+      "release": "#f44336",
+      "playhead": "#ffffff"
+    },
+    "keyboard": {
+      "background": "#1a1a1a",
+      "panelBackground": "#2a2a2a",
+      "whiteKey": "#dcdcdc",
+      "whiteKeyHover": "#ffffff",
+      "blackKey": "#2a2a2a",
+      "blackKeyHover": "#3a3a3a",
+      "pressed": "#ff6b00",
+      "border": "#000000",
+      "octaveLabel": "#666666"
+    },
+    "levelMeter": {
+      "background": "#1a1a1a",
+      "green": "#00ff00",
+      "yellow": "#ffff00",
+      "red": "#ff0000",
+      "border": "#3a3a3a",
+      "clip": "#ff0000"
+    },
+    "labels": {
+      "text": "#e0e0e0",
+      "dim": "#808080"
+    }
+  },
+  "fonts": {
+    "main": "Inter",
+    "mono": "JetBrains Mono",
+    "sizes": {
+      "small": 11,
+      "normal": 13,
+      "large": 16,
+      "equation": 14,
+      "panelTitle": 20,
+      "label": 14
+    }
+  }
+}
