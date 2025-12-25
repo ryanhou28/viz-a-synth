@@ -78,7 +78,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     clearTraceButton.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
     clearTraceButton.onClick = [this]()
     {
-        oscilloscope.clearFrozenTrace();
+        oscilloscope.clearTrace();
         spectrumAnalyzer.clearFrozenTrace();
         singleCycleView.clearFrozenTrace();
     };

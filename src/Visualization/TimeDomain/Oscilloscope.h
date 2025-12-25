@@ -90,6 +90,22 @@ private:
     float detectFundamentalFrequency(const std::vector<float>& samples) const;
 
     /**
+     * Amplitude measurements for the waveform.
+     */
+    struct AmplitudeMeasurements {
+        float peakPositive = 0.0f;   // Maximum positive amplitude
+        float peakNegative = 0.0f;   // Maximum negative amplitude (as positive value)
+        float peakToPeak = 0.0f;     // Vpp = peak+ - peak-
+        float rms = 0.0f;            // Root mean square
+        bool valid = false;          // True if measurements are valid
+    };
+
+    /**
+     * Calculate amplitude measurements from waveform samples.
+     */
+    AmplitudeMeasurements calculateAmplitude(const std::vector<float>& samples) const;
+
+    /**
      * Draw the waveform path.
      */
     void drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds,
@@ -99,6 +115,11 @@ private:
      * Draw voice mode toggle buttons.
      */
     void drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Draw amplitude marker lines at peak levels.
+     */
+    void drawAmplitudeMarkers(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
      * Get the appropriate probe buffer based on voice mode.
@@ -118,8 +139,12 @@ private:
     juce::Rectangle<float> mixButtonBounds;
     juce::Rectangle<float> voiceButtonBounds;
 
+    // Cached amplitude measurements (updated each frame)
+    AmplitudeMeasurements cachedAmplitude;
+
     // Constants
     static constexpr float TriggerHysteresis = 0.02f;
+    static constexpr float MinAmplitudeThreshold = 0.001f;  // Below this, consider silent
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Oscilloscope)
 };
