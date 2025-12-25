@@ -7,6 +7,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
       audioProcessor(p),
       oscilloscope(p.getProbeManager()),
       spectrumAnalyzer(p.getProbeManager()),
+      harmonicView(p.getProbeManager()),
       singleCycleView(p.getProbeManager(),
                       [&]() -> vizasynth::PolyBLEPOscillator& {
                           if (auto* voice = p.getVoice(0)) {
@@ -26,6 +27,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     // Add visualization components
     addAndMakeVisible(oscilloscope);
     addAndMakeVisible(spectrumAnalyzer);
+    addAndMakeVisible(harmonicView);
     addAndMakeVisible(singleCycleView);
     addAndMakeVisible(envelopeVisualizer);
 
@@ -39,6 +41,11 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     spectrumButton.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
     spectrumButton.onClick = [this]() { setVisualizationMode(VisualizationMode::Spectrum); };
     addAndMakeVisible(spectrumButton);
+
+    harmonicsButton.setClickingTogglesState(false);
+    harmonicsButton.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
+    harmonicsButton.onClick = [this]() { setVisualizationMode(VisualizationMode::Harmonics); };
+    addAndMakeVisible(harmonicsButton);
 
     // Initial visualization mode
     setVisualizationMode(VisualizationMode::Oscilloscope);
@@ -70,6 +77,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
         bool frozen = freezeButton.getToggleState();
         oscilloscope.setFrozen(frozen);
         spectrumAnalyzer.setFrozen(frozen);
+        harmonicView.setFrozen(frozen);
         singleCycleView.setFrozen(frozen);
     };
     addAndMakeVisible(freezeButton);
@@ -80,6 +88,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     {
         oscilloscope.clearTrace();
         spectrumAnalyzer.clearFrozenTrace();
+        harmonicView.clearTrace();
         singleCycleView.clearFrozenTrace();
     };
     addAndMakeVisible(clearTraceButton);
@@ -485,19 +494,31 @@ void VizASynthAudioProcessorEditor::resized()
         oscilloscope.setBounds(topHalf.reduced(0, 2));
         singleCycleView.setBounds(scopeArea.reduced(0, 2));
         spectrumAnalyzer.setBounds(scopeArea);  // Hidden but positioned
+        harmonicView.setBounds(scopeArea);      // Hidden but positioned
     }
-    else
+    else if (currentVizMode == VisualizationMode::Spectrum)
     {
         spectrumAnalyzer.setBounds(scopeArea);
         oscilloscope.setBounds(scopeArea);      // Hidden but positioned
         singleCycleView.setBounds(scopeArea);   // Hidden but positioned
+        harmonicView.setBounds(scopeArea);      // Hidden but positioned
+    }
+    else // Harmonics mode
+    {
+        harmonicView.setBounds(scopeArea);
+        oscilloscope.setBounds(scopeArea);      // Hidden but positioned
+        singleCycleView.setBounds(scopeArea);   // Hidden but positioned
+        spectrumAnalyzer.setBounds(scopeArea);  // Hidden but positioned
     }
 
     // Controls below visualization
+    int harmonicsButtonWidth = config.getLayoutInt("components.buttons.harmonics.width", 70);
     auto vizControlArea = vizArea.reduced(layout.vizControlAreaHPad, layout.vizControlAreaVPad);
     scopeButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlScopeWidth));
     vizControlArea.removeFromLeft(layout.vizControlScopeSpacing);
     spectrumButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlSpectrumWidth));
+    vizControlArea.removeFromLeft(layout.vizControlScopeSpacing);
+    harmonicsButton.setBounds(vizControlArea.removeFromLeft(harmonicsButtonWidth));
     vizControlArea.removeFromLeft(layout.vizControlSectionSpacing);
     probeOscButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlProbeWidth));
     vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
@@ -589,7 +610,7 @@ void VizASynthAudioProcessorEditor::applyThemeToComponents()
     auto buttonText = config.getThemeColour("colors.buttons.text", juce::Colour(0xffe0e0e0));
     auto toggleOnColor = config.getThemeColour("colors.buttons.toggleOn", juce::Colours::red.darker());
 
-    for (auto* btn : {&scopeButton, &spectrumButton, &probeOscButton, &probeFilterButton,
+    for (auto* btn : {&scopeButton, &spectrumButton, &harmonicsButton, &probeOscButton, &probeFilterButton,
                       &probeOutputButton, &clearTraceButton}) {
         btn->setColour(juce::TextButton::buttonColourId, buttonDefault);
         btn->setColour(juce::TextButton::textColourOffId, buttonText);
@@ -648,17 +669,22 @@ void VizASynthAudioProcessorEditor::updateVisualizationMode()
 {
     auto& config = vizasynth::ConfigurationManager::getInstance();
     bool isScope = (currentVizMode == VisualizationMode::Oscilloscope);
+    bool isSpectrum = (currentVizMode == VisualizationMode::Spectrum);
+    bool isHarmonics = (currentVizMode == VisualizationMode::Harmonics);
 
     // Show/hide appropriate visualization
     oscilloscope.setVisible(isScope);
     singleCycleView.setVisible(isScope);
-    spectrumAnalyzer.setVisible(!isScope);
+    spectrumAnalyzer.setVisible(isSpectrum);
+    harmonicView.setVisible(isHarmonics);
 
     // Update button highlighting
     scopeButton.setColour(juce::TextButton::buttonColourId,
                           isScope ? config.getAccentColour() : config.getPanelBackgroundColour());
     spectrumButton.setColour(juce::TextButton::buttonColourId,
-                             !isScope ? config.getAccentColour() : config.getPanelBackgroundColour());
+                             isSpectrum ? config.getAccentColour() : config.getPanelBackgroundColour());
+    harmonicsButton.setColour(juce::TextButton::buttonColourId,
+                              isHarmonics ? config.getAccentColour() : config.getPanelBackgroundColour());
 
     // Show/hide time window control (only relevant for oscilloscope)
     timeWindowSlider.setEnabled(isScope);

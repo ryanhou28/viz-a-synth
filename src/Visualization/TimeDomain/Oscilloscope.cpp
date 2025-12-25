@@ -259,6 +259,10 @@ void Oscilloscope::mouseDown(const juce::MouseEvent& event)
 //==============================================================================
 void Oscilloscope::timerCallback()
 {
+    // Don't process if not visible - prevents stealing data from other visualizers
+    if (!isVisible())
+        return;
+
     // Update sample rate
     sampleRate = static_cast<float>(probeManager.getSampleRate());
 

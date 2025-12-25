@@ -149,6 +149,10 @@ ProbeBuffer& SpectrumAnalyzer::getActiveBuffer()
 
 void SpectrumAnalyzer::timerCallback()
 {
+    // Don't process if not visible - prevents stealing data from other visualizers
+    if (!isVisible())
+        return;
+
     if (frozen)
         return;
 
