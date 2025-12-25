@@ -1,6 +1,8 @@
 #include "SpectrumAnalyzer.h"
 #include <cmath>
 
+namespace vizasynth {
+
 //==============================================================================
 SpectrumAnalyzer::SpectrumAnalyzer(ProbeManager& pm)
     : probeManager(pm)
@@ -119,11 +121,13 @@ juce::Colour SpectrumAnalyzer::getProbeColour(ProbePoint probe)
 {
     switch (probe)
     {
-        case ProbePoint::Oscillator: return juce::Colour(0xffff9500);  // Orange
-        case ProbePoint::PostFilter: return juce::Colour(0xffbb86fc);  // Purple
-        case ProbePoint::Output:     return juce::Colour(0xff00e5ff);  // Cyan
-        default:                     return juce::Colours::white;
+        case ProbePoint::Oscillator:   return juce::Colour(0xffff9500);  // Orange
+        case ProbePoint::PostFilter:   return juce::Colour(0xffbb86fc);  // Purple
+        case ProbePoint::PostEnvelope: return juce::Colour(0xff4caf50);  // Green
+        case ProbePoint::Output:       return juce::Colour(0xff00e5ff);  // Cyan
+        case ProbePoint::Mix:          return juce::Colour(0xffffffff);  // White
     }
+    return juce::Colours::white;
 }
 
 //==============================================================================
@@ -410,3 +414,5 @@ void SpectrumAnalyzer::mouseDown(const juce::MouseEvent& event)
         repaint();
     }
 }
+
+} // namespace vizasynth

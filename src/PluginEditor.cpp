@@ -8,7 +8,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
       oscilloscope(p.getProbeManager()),
       spectrumAnalyzer(p.getProbeManager()),
       singleCycleView(p.getProbeManager(),
-                      [&]() -> PolyBLEPOscillator& {
+                      [&]() -> vizasynth::PolyBLEPOscillator& {
                           if (auto* voice = p.getVoice(0)) {
                               return voice->getOscillator();
                           }
@@ -38,7 +38,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     setVisualizationMode(VisualizationMode::Oscilloscope);
 
     // Setup probe selector buttons
-    auto setupProbeButton = [this](juce::TextButton& button, ProbePoint probe, juce::Colour colour)
+    auto setupProbeButton = [this](juce::TextButton& button, vizasynth::ProbePoint probe, juce::Colour colour)
     {
         button.setClickingTogglesState(false);
         button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
@@ -51,9 +51,9 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
         addAndMakeVisible(button);
     };
 
-    setupProbeButton(probeOscButton, ProbePoint::Oscillator, Oscilloscope::getProbeColour(ProbePoint::Oscillator));
-    setupProbeButton(probeFilterButton, ProbePoint::PostFilter, Oscilloscope::getProbeColour(ProbePoint::PostFilter));
-    setupProbeButton(probeOutputButton, ProbePoint::Output, Oscilloscope::getProbeColour(ProbePoint::Output));
+    setupProbeButton(probeOscButton, vizasynth::ProbePoint::Oscillator, vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::Oscillator));
+    setupProbeButton(probeFilterButton, vizasynth::ProbePoint::PostFilter, vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::PostFilter));
+    setupProbeButton(probeOutputButton, vizasynth::ProbePoint::Output, vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::Output));
 
     // Freeze button
     freezeButton.setClickingTogglesState(true);
@@ -366,10 +366,10 @@ void VizASynthAudioProcessorEditor::timerCallback()
     int oscType = static_cast<int>(audioProcessor.getAPVTS().getRawParameterValue("oscType")->load());
     switch (oscType)
     {
-        case 0: singleCycleView.setWaveformType(OscillatorWaveform::Sine); break;
-        case 1: singleCycleView.setWaveformType(OscillatorWaveform::Saw); break;
-        case 2: singleCycleView.setWaveformType(OscillatorWaveform::Square); break;
-        default: singleCycleView.setWaveformType(OscillatorWaveform::Sine); break;
+        case 0: singleCycleView.setWaveformType(vizasynth::OscillatorWaveform::Sine); break;
+        case 1: singleCycleView.setWaveformType(vizasynth::OscillatorWaveform::Saw); break;
+        case 2: singleCycleView.setWaveformType(vizasynth::OscillatorWaveform::Square); break;
+        default: singleCycleView.setWaveformType(vizasynth::OscillatorWaveform::Sine); break;
     }
 }
 
@@ -391,12 +391,12 @@ void VizASynthAudioProcessorEditor::updateProbeButtons()
         }
     };
 
-    highlightButton(probeOscButton, activeProbe == ProbePoint::Oscillator,
-                    Oscilloscope::getProbeColour(ProbePoint::Oscillator));
-    highlightButton(probeFilterButton, activeProbe == ProbePoint::PostFilter,
-                    Oscilloscope::getProbeColour(ProbePoint::PostFilter));
-    highlightButton(probeOutputButton, activeProbe == ProbePoint::Output,
-                    Oscilloscope::getProbeColour(ProbePoint::Output));
+    highlightButton(probeOscButton, activeProbe == vizasynth::ProbePoint::Oscillator,
+                    vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::Oscillator));
+    highlightButton(probeFilterButton, activeProbe == vizasynth::ProbePoint::PostFilter,
+                    vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::PostFilter));
+    highlightButton(probeOutputButton, activeProbe == vizasynth::ProbePoint::Output,
+                    vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::Output));
 }
 
 void VizASynthAudioProcessorEditor::setVisualizationMode(VisualizationMode mode)

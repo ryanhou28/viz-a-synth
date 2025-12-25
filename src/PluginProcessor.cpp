@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+using namespace vizasynth;
+
 //==============================================================================
 // VizASynthVoice Implementation
 //==============================================================================

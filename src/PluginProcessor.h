@@ -5,8 +5,6 @@
 #include "Visualization/ProbeBuffer.h"
 #include "DSP/PolyBLEPOscillator.h"
 
-class ProbeManager;
-
 //==============================================================================
 /**
  * Simple synthesizer voice for Viz-A-Synth
@@ -32,14 +30,14 @@ public:
     void setADSR(float attack, float decay, float sustain, float release);
 
     // Probe system
-    void setProbeManager(ProbeManager* manager) { probeManager = manager; }
+    void setProbeManager(vizasynth::ProbeManager* manager) { probeManager = manager; }
     void setVoiceIndex(int index) { voiceIndex = index; }
     int getVoiceIndex() const { return voiceIndex; }
 
-    PolyBLEPOscillator& getOscillator() { return oscillator; }
+    vizasynth::PolyBLEPOscillator& getOscillator() { return oscillator; }
 
 private:
-    PolyBLEPOscillator oscillator;
+    vizasynth::PolyBLEPOscillator oscillator;
     juce::dsp::StateVariableTPTFilter<float> filter;
     juce::ADSR adsr;
     juce::ADSR::Parameters adsrParams;
@@ -49,7 +47,7 @@ private:
     float velocity = 0.0f;
 
     // Probe system
-    ProbeManager* probeManager = nullptr;
+    vizasynth::ProbeManager* probeManager = nullptr;
     int voiceIndex = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VizASynthVoice)
@@ -112,7 +110,7 @@ public:
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
 
     // Probe system access
-    ProbeManager& getProbeManager() { return probeManager; }
+    vizasynth::ProbeManager& getProbeManager() { return probeManager; }
 
     // Level metering
     float getOutputLevel() const { return outputLevel.load(); }
@@ -138,7 +136,7 @@ private:
     //==============================================================================
     juce::Synthesiser synth;
     juce::AudioProcessorValueTreeState apvts;
-    ProbeManager probeManager;
+    vizasynth::ProbeManager probeManager;
 
     // Level metering
     std::atomic<float> outputLevel{0.0f};

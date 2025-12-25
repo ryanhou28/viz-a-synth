@@ -41,9 +41,9 @@ private:
     VizASynthAudioProcessor& audioProcessor;
 
     // Visualization
-    Oscilloscope oscilloscope;
-    SpectrumAnalyzer spectrumAnalyzer;
-    SingleCycleView singleCycleView;
+    vizasynth::Oscilloscope oscilloscope;
+    vizasynth::SpectrumAnalyzer spectrumAnalyzer;
+    vizasynth::SingleCycleView singleCycleView;
     VisualizationMode currentVizMode = VisualizationMode::Oscilloscope;
 
     // Visualization mode selector

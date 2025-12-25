@@ -1,6 +1,8 @@
 #include "SingleCycleView.h"
 #include <cmath>
 
+namespace vizasynth {
+
 //==============================================================================
 SingleCycleView::SingleCycleView(ProbeManager& pm, PolyBLEPOscillator& osc)
     : probeManager(pm), oscillator(osc)
@@ -61,9 +63,11 @@ void SingleCycleView::paint(juce::Graphics& g)
     juce::String probeText;
     switch (probeManager.getActiveProbe())
     {
-        case ProbePoint::Oscillator: probeText = "OSC"; break;
-        case ProbePoint::PostFilter: probeText = "FILT"; break;
-        case ProbePoint::Output:     probeText = "OUT"; break;
+        case ProbePoint::Oscillator:   probeText = "OSC"; break;
+        case ProbePoint::PostFilter:   probeText = "FILT"; break;
+        case ProbePoint::PostEnvelope: probeText = "ENV"; break;
+        case ProbePoint::Output:       probeText = "OUT"; break;
+        case ProbePoint::Mix:          probeText = "MIX"; break;
     }
 
     g.drawText(probeText, static_cast<int>(bounds.getRight() - 50),
@@ -132,11 +136,13 @@ juce::Colour SingleCycleView::getProbeColour(ProbePoint probe)
 {
     switch (probe)
     {
-        case ProbePoint::Oscillator: return juce::Colour(0xffff9500);  // Orange
-        case ProbePoint::PostFilter: return juce::Colour(0xffbb86fc);  // Purple
-        case ProbePoint::Output:     return juce::Colour(0xff00e5ff);  // Cyan
-        default:                     return juce::Colours::white;
+        case ProbePoint::Oscillator:   return juce::Colour(0xffff9500);  // Orange
+        case ProbePoint::PostFilter:   return juce::Colour(0xffbb86fc);  // Purple
+        case ProbePoint::PostEnvelope: return juce::Colour(0xff4caf50);  // Green
+        case ProbePoint::Output:       return juce::Colour(0xff00e5ff);  // Cyan
+        case ProbePoint::Mix:          return juce::Colour(0xffffffff);  // White
     }
+    return juce::Colours::white;
 }
 
 //==============================================================================
@@ -351,3 +357,5 @@ void SingleCycleView::mouseDown(const juce::MouseEvent& event)
         repaint();
     }
 }
+
+} // namespace vizasynth

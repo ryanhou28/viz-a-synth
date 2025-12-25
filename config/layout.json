@@ -1,0 +1,33 @@
+{
+  "window": {
+    "width": 1200,
+    "height": 800,
+    "minWidth": 900,
+    "minHeight": 600,
+    "resizable": true
+  },
+  "layout": {
+    "controlPanel": {
+      "width": 260,
+      "position": "left"
+    },
+    "signalFlow": {
+      "height": 70,
+      "position": "top"
+    },
+    "keyboard": {
+      "height": 90,
+      "position": "bottom"
+    },
+    "visualizationGrid": {
+      "rows": 2,
+      "cols": 2,
+      "defaultPanels": [
+        { "type": "oscilloscope", "row": 0, "col": 0 },
+        { "type": "spectrum", "row": 0, "col": 1 },
+        { "type": "poleZero", "row": 1, "col": 0 },
+        { "type": "bode", "row": 1, "col": 1 }
+      ]
+    }
+  }
+}

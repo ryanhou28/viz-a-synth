@@ -1,5 +1,7 @@
 #include "Oscilloscope.h"
 
+namespace vizasynth {
+
 //==============================================================================
 Oscilloscope::Oscilloscope(ProbeManager& pm)
     : probeManager(pm)
@@ -320,3 +322,5 @@ void Oscilloscope::mouseDown(const juce::MouseEvent& event)
         repaint();
     }
 }
+
+} // namespace vizasynth

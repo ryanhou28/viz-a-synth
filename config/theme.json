@@ -1,0 +1,40 @@
+{
+  "colors": {
+    "background": "#1a1a2e",
+    "panelBackground": "#16213e",
+    "grid": "#2d2d44",
+    "gridMajor": "#3d3d54",
+    "text": "#e0e0e0",
+    "textDim": "#808080",
+    "textHighlight": "#ffffff",
+    "accent": "#0f3460",
+    "probes": {
+      "oscillator": "#ff9500",
+      "filter": "#bb86fc",
+      "envelope": "#03dac6",
+      "output": "#00e5ff",
+      "mix": "#ff5722"
+    },
+    "waveform": {
+      "primary": "#4CAF50",
+      "ghost": "#4CAF5066"
+    },
+    "poleZero": {
+      "pole": "#ff4444",
+      "zero": "#4444ff",
+      "unitCircle": "#888888",
+      "stable": "#00ff0033",
+      "unstable": "#ff000033"
+    }
+  },
+  "fonts": {
+    "main": "Inter",
+    "mono": "JetBrains Mono",
+    "sizes": {
+      "small": 11,
+      "normal": 13,
+      "large": 16,
+      "equation": 14
+    }
+  }
+}
