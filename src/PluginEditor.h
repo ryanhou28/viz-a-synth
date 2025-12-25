@@ -2,7 +2,7 @@
 
 #include "PluginProcessor.h"
 #include "Visualization/TimeDomain/Oscilloscope.h"
-#include "Visualization/SpectrumAnalyzer.h"
+#include "Visualization/FrequencyDomain/SpectrumAnalyzer.h"
 #include "Visualization/FrequencyDomain/HarmonicView.h"
 #include "Visualization/SingleCycleView.h"
 #include "Visualization/EnvelopeVisualizer.h"

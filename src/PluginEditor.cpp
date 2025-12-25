@@ -99,7 +99,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     clearTraceButton.onClick = [this]()
     {
         oscilloscope.clearTrace();
-        spectrumAnalyzer.clearFrozenTrace();
+        spectrumAnalyzer.clearTrace();
         harmonicView.clearTrace();
         singleCycleView.clearFrozenTrace();
     };
