@@ -1,11 +1,12 @@
 #include "SpectrumAnalyzer.h"
+#include "../../DSP/Oscillators/PolyBLEPOscillator.h"
 #include <cmath>
 
 namespace vizasynth {
 
 //==============================================================================
-SpectrumAnalyzer::SpectrumAnalyzer(ProbeManager& pm)
-    : probeManager(pm)
+SpectrumAnalyzer::SpectrumAnalyzer(ProbeManager& pm, PolyBLEPOscillator& osc)
+    : probeManager(pm), oscillator(osc)
 {
     inputBuffer.reserve(FFTSize * 2);
     magnitudeSpectrum.fill(MinDB);
@@ -13,6 +14,9 @@ SpectrumAnalyzer::SpectrumAnalyzer(ProbeManager& pm)
     frozenSpectrum.fill(MinDB);
 
     sampleRate = static_cast<float>(probeManager.getSampleRate());
+
+    // Note: Don't call updateWaveformInfo() here - the oscillator's
+    // virtual table may not be ready. It will be called on first timer tick.
 }
 
 //==============================================================================
@@ -99,6 +103,11 @@ void SpectrumAnalyzer::renderVisualization(juce::Graphics& g)
     // Draw Nyquist marker
     drawNyquistMarker(g, bounds);
 
+    // Draw harmonic markers (behind spectrum curve) - only after a note has been played
+    if (showHarmonicMarkers && hasEverPlayedNote && smoothedFundamental > 0.0f) {
+        drawHarmonicMarkers(g, bounds);
+    }
+
     // Draw spectrum
     if (frozen) {
         drawSpectrum(g, bounds, frozenSpectrum, probeColour);
@@ -128,16 +137,31 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
     g.drawText(probeText, static_cast<int>(fullBounds.getRight() - 50), static_cast<int>(fullBounds.getY() + 5), 45, 15,
                juce::Justification::centredRight);
 
-    // Draw "SPECTRUM" label
+    // Draw "SPECTRUM" label with waveform name if harmonic markers are enabled
     g.setColour(juce::Colours::grey);
-    g.drawText("SPECTRUM", static_cast<int>(fullBounds.getX() + 5), static_cast<int>(fullBounds.getY() + 5),
-               80, 15, juce::Justification::centredLeft);
+    juce::String headerText = "SPECTRUM";
+    if (showHarmonicMarkers && !waveformName.empty()) {
+        headerText += " (" + juce::String(waveformName) + ")";
+    }
+    g.drawText(headerText, static_cast<int>(fullBounds.getX() + 5), static_cast<int>(fullBounds.getY() + 5),
+               150, 15, juce::Justification::centredLeft);
 
     // Draw frozen indicator
     if (frozen) {
         g.setColour(juce::Colours::red.withAlpha(0.8f));
         g.drawText("FROZEN", static_cast<int>(fullBounds.getCentreX() - 30), static_cast<int>(fullBounds.getY() + 5), 60, 15,
                    juce::Justification::centred);
+    }
+
+    // Display fundamental frequency info if harmonic markers are enabled and a note has been played
+    if (showHarmonicMarkers && hasEverPlayedNote && smoothedFundamental > 0.0f) {
+        g.setColour(getTextColour());
+        g.setFont(10.0f);
+        auto freqVal = FrequencyValue::fromHz(smoothedFundamental, sampleRate);
+        juce::String f0Info = "f0 = " + juce::String(smoothedFundamental, 1) + " Hz (" +
+                              freqVal.toNormalizedString() + ")";
+        g.drawText(f0Info, static_cast<int>(fullBounds.getX() + 5), static_cast<int>(fullBounds.getY() + 20),
+                   200, 12, juce::Justification::centredLeft);
     }
 
     // Voice indicator (only show in single voice mode)
@@ -151,6 +175,9 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
         }
     }
 
+    // Draw harmonic markers toggle
+    drawHarmonicToggle(g, fullBounds);
+
     // Draw voice mode toggle
     drawVoiceModeToggle(g, fullBounds);
 
@@ -161,6 +188,24 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
     juce::String binText = "FFT: " + juce::String(FFTSize) + " pts";
     g.drawText(fsText + " | " + binText, static_cast<int>(bounds.getX()), static_cast<int>(bounds.getY() - 15),
                static_cast<int>(bounds.getWidth()), 12, juce::Justification::centred);
+
+    // Draw legend for harmonic markers if enabled and a note has been played
+    if (showHarmonicMarkers && hasEverPlayedNote) {
+        g.setFont(9.0f);
+        float legendY = fullBounds.getY() + 35;
+
+        // Odd harmonics legend
+        g.setColour(probeColour.withMultipliedBrightness(0.8f));
+        g.fillRect(fullBounds.getX() + 5, legendY, 12.0f, 2.0f);
+        g.drawText("Odd", static_cast<int>(fullBounds.getX() + 20),
+                   static_cast<int>(legendY - 4), 25, 10, juce::Justification::centredLeft);
+
+        // Even harmonics legend
+        g.setColour(probeColour.withRotatedHue(0.15f).withMultipliedSaturation(0.8f));
+        g.fillRect(fullBounds.getX() + 50, legendY, 12.0f, 2.0f);
+        g.drawText("Even", static_cast<int>(fullBounds.getX() + 65),
+                   static_cast<int>(legendY - 4), 30, 10, juce::Justification::centredLeft);
+    }
 }
 
 void SpectrumAnalyzer::renderEquations(juce::Graphics& g)
@@ -171,21 +216,52 @@ void SpectrumAnalyzer::renderEquations(juce::Graphics& g)
     g.setColour(juce::Colour(0xcc16213e));
     g.fillRoundedRectangle(bounds, 5.0f);
 
+    float yOffset = 8.0f;
+    float lineHeight = 14.0f;
+
+    // Show DFT equation with proper formatting
     g.setColour(getTextColour());
     g.setFont(11.0f);
+    juce::String dftEquation = "DFT: X[k] = sum(x[n] * e^(-j*2*pi*k*n/N))";
+    g.drawText(dftEquation, static_cast<int>(bounds.getX() + 8), static_cast<int>(bounds.getY() + yOffset),
+               static_cast<int>(bounds.getWidth() - 16), static_cast<int>(lineHeight),
+               juce::Justification::centredLeft);
+    yOffset += lineHeight;
 
-    // Show DFT equation
-    juce::String equation = "X[k] = sum(x[n] * e^(-j*2*pi*k*n/N))";
-    g.drawText(equation, bounds.reduced(8), juce::Justification::centred);
+    // Show waveform-specific Fourier series equation
+    juce::String fourierEquation;
+    if (currentWaveform == OscillatorSource::Waveform::Sine) {
+        fourierEquation = "Sine: x(t) = sin(w0*t)";
+    } else if (currentWaveform == OscillatorSource::Waveform::Saw) {
+        fourierEquation = "Saw: x(t) = (2/pi) * sum((-1)^(k+1)/k * sin(k*w0*t))";
+    } else if (currentWaveform == OscillatorSource::Waveform::Square) {
+        fourierEquation = "Square: x(t) = (4/pi) * sum(1/k * sin(k*w0*t)), k=1,3,5...";
+    } else if (currentWaveform == OscillatorSource::Waveform::Triangle) {
+        fourierEquation = "Triangle: x(t) = (8/pi^2) * sum((-1)^((k-1)/2)/k^2 * sin(k*w0*t))";
+    }
+    if (!fourierEquation.isEmpty()) {
+        g.setColour(juce::Colour(0xffffff00).withAlpha(0.9f));  // Yellow for Fourier series
+        g.setFont(10.0f);
+        g.drawText(fourierEquation, static_cast<int>(bounds.getX() + 8), static_cast<int>(bounds.getY() + yOffset),
+                   static_cast<int>(bounds.getWidth() - 16), static_cast<int>(lineHeight),
+                   juce::Justification::centredLeft);
+        yOffset += lineHeight;
+    }
 
-    // Show bin width
+    // Show bin width explanation
     float binWidth = sampleRate / FFTSize;
     g.setFont(10.0f);
     g.setColour(getDimTextColour());
-    g.drawText("Bin width: " + juce::String(binWidth, 1) + " Hz",
-               static_cast<int>(bounds.getX() + 8), static_cast<int>(bounds.getBottom() - 18),
-               static_cast<int>(bounds.getWidth() - 16), 14,
-               juce::Justification::left);
+    juce::String binInfo = "df = fs/N = " + juce::String(binWidth, 2) + " Hz";
+    g.drawText(binInfo, static_cast<int>(bounds.getX() + 8), static_cast<int>(bounds.getY() + yOffset),
+               static_cast<int>(bounds.getWidth() / 2 - 8), static_cast<int>(lineHeight),
+               juce::Justification::centredLeft);
+
+    // Show N and fs values
+    juce::String nfsInfo = "N=" + juce::String(FFTSize) + ", fs=" + formatSampleRate(sampleRate);
+    g.drawText(nfsInfo, static_cast<int>(bounds.getX() + bounds.getWidth() / 2), static_cast<int>(bounds.getY() + yOffset),
+               static_cast<int>(bounds.getWidth() / 2 - 8), static_cast<int>(lineHeight),
+               juce::Justification::centredRight);
 }
 
 void SpectrumAnalyzer::resized()
@@ -207,6 +283,10 @@ void SpectrumAnalyzer::mouseDown(const juce::MouseEvent& event)
         inputBuffer.clear();
         repaint();
     }
+    else if (harmonicButtonBounds.contains(pos)) {
+        showHarmonicMarkers = !showHarmonicMarkers;
+        repaint();
+    }
 }
 
 //==============================================================================
@@ -217,6 +297,38 @@ void SpectrumAnalyzer::timerCallback()
         return;
 
     sampleRate = static_cast<float>(probeManager.getSampleRate());
+
+    // Deferred initialization of waveform info (can't be done in constructor
+    // because oscillator's vtable might not be ready)
+    if (!waveformInitialized) {
+        updateWaveformInfo();
+        waveformInitialized = true;
+    } else {
+        // Check if waveform changed and update info
+        auto newWaveform = oscillator.getWaveform();
+        if (newWaveform != currentWaveform) {
+            updateWaveformInfo();
+        }
+    }
+
+    // Track fundamental frequency from ProbeManager
+    fundamentalFrequency = probeManager.getActiveFrequency();
+
+    // Smooth the fundamental frequency to avoid jumps
+    if (fundamentalFrequency > 0.0f) {
+        hasEverPlayedNote = true;  // Mark that a note has been played
+        if (smoothedFundamental <= 0.0f) {
+            smoothedFundamental = fundamentalFrequency;
+        } else {
+            smoothedFundamental = 0.9f * smoothedFundamental + 0.1f * fundamentalFrequency;
+        }
+    } else {
+        // Decay smoothed fundamental when no note is playing
+        smoothedFundamental *= 0.95f;
+        if (smoothedFundamental < 10.0f) {
+            smoothedFundamental = 0.0f;
+        }
+    }
 
     if (frozen) {
         return;
@@ -391,6 +503,92 @@ void SpectrumAnalyzer::drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<fl
     g.fillRoundedRectangle(voiceButtonBounds, 3.0f);
     g.setColour(!isMixMode ? juce::Colours::white : juce::Colours::grey);
     g.drawText("Voice", voiceButtonBounds, juce::Justification::centred);
+}
+
+void SpectrumAnalyzer::drawHarmonicToggle(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    float buttonWidth = 70.0f;
+    float buttonHeight = 18.0f;
+    float padding = 8.0f;
+
+    // Position to the left of the voice mode toggle
+    float startX = bounds.getRight() - (35.0f * 2 + 2.0f + padding) - buttonWidth - 8.0f;
+    float startY = bounds.getBottom() - buttonHeight - padding;
+
+    harmonicButtonBounds = juce::Rectangle<float>(startX, startY, buttonWidth, buttonHeight);
+
+    g.setColour(showHarmonicMarkers ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff2a2a2a));
+    g.fillRoundedRectangle(harmonicButtonBounds, 3.0f);
+
+    g.setColour(showHarmonicMarkers ? juce::Colour(0xff00e5ff).withAlpha(0.9f) : juce::Colours::grey);
+    g.setFont(10.0f);
+    g.drawText("Harmonics", harmonicButtonBounds, juce::Justification::centred);
+}
+
+void SpectrumAnalyzer::drawHarmonicMarkers(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    if (smoothedFundamental <= 0.0f) return;
+
+    auto probeColour = getProbeColour(probeManager.getActiveProbe());
+    float nyquist = sampleRate / 2.0f;
+
+    // Draw vertical lines at each harmonic frequency
+    for (int n = 1; n <= MaxHarmonics; ++n) {
+        float harmonicFreq = smoothedFundamental * static_cast<float>(n);
+
+        // Skip if beyond Nyquist or display range
+        if (harmonicFreq > nyquist || harmonicFreq > MaxFrequency || harmonicFreq < MinFrequency)
+            continue;
+
+        float x = frequencyToX(harmonicFreq, bounds);
+
+        // Determine if odd or even harmonic
+        bool isOdd = (n % 2) == 1;
+
+        // Color coding: odd harmonics use probe color, even harmonics use shifted hue
+        juce::Colour markerColour;
+        if (n == 1) {
+            // Fundamental - brightest
+            markerColour = probeColour;
+        } else if (isOdd) {
+            // Odd harmonics - slightly dimmer probe color
+            markerColour = probeColour.withMultipliedBrightness(0.8f);
+        } else {
+            // Even harmonics - rotated hue
+            markerColour = probeColour.withRotatedHue(0.15f).withMultipliedSaturation(0.8f);
+        }
+
+        // Draw dashed vertical line
+        g.setColour(markerColour.withAlpha(0.6f));
+        const float dashLength = 4.0f;
+        float y = bounds.getY();
+        while (y < bounds.getBottom()) {
+            g.drawVerticalLine(static_cast<int>(x), y, std::min(y + dashLength, bounds.getBottom()));
+            y += dashLength * 2;
+        }
+
+        // Draw harmonic label at top
+        g.setFont(9.0f);
+        g.setColour(markerColour.withAlpha(0.8f));
+        juce::String label;
+        if (n == 1) {
+            label = "f0";
+        } else {
+            label = juce::String(n) + "f0";
+        }
+
+        // Position label, alternating height to avoid overlap
+        float labelY = bounds.getY() + 3 + (n % 2 == 0 ? 10.0f : 0.0f);
+        g.drawText(label, static_cast<int>(x - 12), static_cast<int>(labelY),
+                   24, 10, juce::Justification::centred);
+    }
+}
+
+void SpectrumAnalyzer::updateWaveformInfo()
+{
+    currentWaveform = oscillator.getWaveform();
+    waveformName = OscillatorSource::waveformToString(currentWaveform);
+    harmonicDescription = oscillator.getHarmonicDescription();
 }
 
 } // namespace vizasynth

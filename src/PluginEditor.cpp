@@ -6,7 +6,13 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     : AudioProcessorEditor(&p),
       audioProcessor(p),
       oscilloscope(p.getProbeManager()),
-      spectrumAnalyzer(p.getProbeManager()),
+      spectrumAnalyzer(p.getProbeManager(),
+                       [&]() -> vizasynth::PolyBLEPOscillator& {
+                           if (auto* voice = p.getVoice(0)) {
+                               return voice->getOscillator();
+                           }
+                           throw std::runtime_error("No voices available to provide an oscillator.");
+                       }()),
       harmonicView(p.getProbeManager(),
                    [&]() -> vizasynth::PolyBLEPOscillator& {
                        if (auto* voice = p.getVoice(0)) {

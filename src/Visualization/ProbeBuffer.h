@@ -90,7 +90,7 @@ private:
     std::atomic<ProbePoint> activeProbe{ProbePoint::Output};
     std::atomic<int> activeVoiceIndex{-1};
     std::atomic<VoiceMode> voiceMode{VoiceMode::Mix};  // Default to Mix
-    std::atomic<float> activeFrequency{440.0f};        // For single-cycle view
+    std::atomic<float> activeFrequency{0.0f};           // For single-cycle view (0 = no note playing)
     std::atomic<double> sampleRate{44100.0};
 
     // Track frequencies for each voice (for mix mode lowest frequency calculation)

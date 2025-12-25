@@ -3,24 +3,39 @@
 #include "../Core/VisualizationPanel.h"
 #include "../ProbeBuffer.h"
 #include "../../Core/FrequencyValue.h"
+#include "../../DSP/Oscillators/OscillatorSource.h"
 #include <juce_dsp/juce_dsp.h>
 #include <vector>
 #include <array>
 
 namespace vizasynth {
 
+// Forward declaration
+class PolyBLEPOscillator;
+
 /**
  * Spectrum Analyzer visualization panel.
  *
  * Displays frequency-domain representation using FFT with logarithmic frequency axis.
  * Extends VisualizationPanel for consistent interface with other panels.
+ *
+ * Features:
+ * - Logarithmic frequency axis (20 Hz to 20 kHz)
+ * - Harmonic markers overlay (f₀, 2f₀, 3f₀, etc.) with odd/even color coding
+ * - Waveform-specific Fourier series equation display
+ * - DFT equation annotation with bin width explanation
+ * - Nyquist frequency marker
  */
 class SpectrumAnalyzer : public VisualizationPanel {
 public:
     static constexpr int FFTOrder = 12;  // 2^12 = 4096 points
     static constexpr int FFTSize = 1 << FFTOrder;
+    static constexpr int MaxHarmonics = 16;  // Maximum harmonics to display as markers
 
-    explicit SpectrumAnalyzer(ProbeManager& probeManager);
+    /**
+     * Constructor with oscillator reference for harmonic markers and Fourier series display.
+     */
+    SpectrumAnalyzer(ProbeManager& probeManager, PolyBLEPOscillator& oscillator);
     ~SpectrumAnalyzer() override = default;
 
     //=========================================================================
@@ -54,6 +69,21 @@ public:
      * Get current smoothing factor.
      */
     float getSmoothingFactor() const { return smoothingFactor; }
+
+    /**
+     * Enable/disable harmonic markers overlay.
+     */
+    void setShowHarmonics(bool show) { showHarmonicMarkers = show; }
+
+    /**
+     * Check if harmonic markers are shown.
+     */
+    bool getShowHarmonics() const { return showHarmonicMarkers; }
+
+    /**
+     * Get the current fundamental frequency being tracked.
+     */
+    float getFundamentalFrequency() const { return fundamentalFrequency; }
 
     //=========================================================================
     // Probe Color (static for use by other components)
@@ -102,9 +132,24 @@ private:
     void drawNyquistMarker(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
+     * Draw harmonic markers overlay (f₀, 2f₀, 3f₀, etc.).
+     */
+    void drawHarmonicMarkers(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
      * Draw voice mode toggle buttons.
      */
     void drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Draw harmonic markers toggle button.
+     */
+    void drawHarmonicToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Update waveform info from oscillator.
+     */
+    void updateWaveformInfo();
 
     /**
      * Convert frequency to X position (logarithmic).
@@ -122,6 +167,7 @@ private:
     ProbeBuffer& getActiveBuffer();
 
     ProbeManager& probeManager;
+    PolyBLEPOscillator& oscillator;
 
     // FFT
     juce::dsp::FFT fft{FFTOrder};
@@ -140,9 +186,22 @@ private:
     // Settings
     float smoothingFactor = 0.8f;
 
+    // Harmonic markers
+    float fundamentalFrequency = 0.0f;
+    float smoothedFundamental = 0.0f;
+    bool showHarmonicMarkers = true;  // Show harmonic overlay by default
+    bool hasEverPlayedNote = false;  // Track if a note has ever been played
+    bool waveformInitialized = false;  // Deferred initialization flag
+
+    // Cached waveform info
+    OscillatorSource::Waveform currentWaveform = OscillatorSource::Waveform::Sine;
+    std::string waveformName;
+    std::string harmonicDescription;
+
     // Voice mode toggle button bounds (for hit testing)
     juce::Rectangle<float> mixButtonBounds;
     juce::Rectangle<float> voiceButtonBounds;
+    juce::Rectangle<float> harmonicButtonBounds;
 
     // Display range
     static constexpr float MinFrequency = 20.0f;
