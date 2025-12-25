@@ -33,6 +33,17 @@ public:
     static constexpr int MaxHarmonics = 16;  // Maximum harmonics to display as markers
 
     /**
+     * Available window functions for FFT analysis.
+     * Each offers different trade-offs between frequency resolution and spectral leakage.
+     */
+    enum class WindowType {
+        Rectangular,  // No windowing - best resolution, worst leakage
+        Hann,         // Good balance between resolution and leakage (default)
+        Hamming,      // Similar to Hann but with different sidelobe characteristics
+        Blackman      // Best leakage suppression, lowest resolution
+    };
+
+    /**
      * Constructor with oscillator reference for harmonic markers and Fourier series display.
      */
     SpectrumAnalyzer(ProbeManager& probeManager, PolyBLEPOscillator& oscillator);
@@ -85,6 +96,26 @@ public:
      */
     float getFundamentalFrequency() const { return fundamentalFrequency; }
 
+    /**
+     * Set the window function type for FFT analysis.
+     */
+    void setWindowType(WindowType type);
+
+    /**
+     * Get the current window function type.
+     */
+    WindowType getWindowType() const { return currentWindowType; }
+
+    /**
+     * Get display name for a window type.
+     */
+    static const char* windowTypeToString(WindowType type);
+
+    /**
+     * Get tooltip description for a window type explaining its characteristics.
+     */
+    static const char* windowTypeTooltip(WindowType type);
+
     //=========================================================================
     // Probe Color (static for use by other components)
     //=========================================================================
@@ -107,6 +138,8 @@ protected:
 
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
 
     //=========================================================================
     // Timer Override
@@ -147,6 +180,26 @@ private:
     void drawHarmonicToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
+     * Draw window function selector button.
+     */
+    void drawWindowSelector(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Draw window function shape inset.
+     */
+    void drawWindowInset(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Draw tooltip if hovering over window selector.
+     */
+    void drawWindowTooltip(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Rebuild the window function with current type.
+     */
+    void rebuildWindow();
+
+    /**
      * Update waveform info from oscillator.
      */
     void updateWaveformInfo();
@@ -171,7 +224,7 @@ private:
 
     // FFT
     juce::dsp::FFT fft{FFTOrder};
-    juce::dsp::WindowingFunction<float> window{FFTSize, juce::dsp::WindowingFunction<float>::hann};
+    std::unique_ptr<juce::dsp::WindowingFunction<float>> window;
 
     // Buffers
     std::array<float, FFTSize> fftInput{};
@@ -202,6 +255,12 @@ private:
     juce::Rectangle<float> mixButtonBounds;
     juce::Rectangle<float> voiceButtonBounds;
     juce::Rectangle<float> harmonicButtonBounds;
+    juce::Rectangle<float> windowButtonBounds;
+
+    // Window function
+    WindowType currentWindowType = WindowType::Hann;
+    std::array<float, FFTSize> windowCoefficients{};  // Pre-computed window values for inset display
+    bool showWindowTooltip = false;
 
     // Display range
     static constexpr float MinFrequency = 20.0f;

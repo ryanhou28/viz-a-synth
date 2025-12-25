@@ -15,6 +15,14 @@ SpectrumAnalyzer::SpectrumAnalyzer(ProbeManager& pm, PolyBLEPOscillator& osc)
 
     sampleRate = static_cast<float>(probeManager.getSampleRate());
 
+    // Initialize window function (default: Hann)
+    window = std::make_unique<juce::dsp::WindowingFunction<float>>(
+        FFTSize, juce::dsp::WindowingFunction<float>::hann);
+
+    // Initialize window coefficients for visualization
+    windowCoefficients.fill(1.0f);
+    window->multiplyWithWindowingTable(windowCoefficients.data(), FFTSize);
+
     // Note: Don't call updateWaveformInfo() here - the oscillator's
     // virtual table may not be ready. It will be called on first timer tick.
 }
@@ -44,6 +52,83 @@ juce::Colour SpectrumAnalyzer::getProbeColour(ProbePoint probe)
         case ProbePoint::Mix:          return juce::Colour(0xffffffff);  // White
     }
     return juce::Colours::white;
+}
+
+const char* SpectrumAnalyzer::windowTypeToString(WindowType type)
+{
+    switch (type) {
+        case WindowType::Rectangular: return "Rect";
+        case WindowType::Hann:        return "Hann";
+        case WindowType::Hamming:     return "Hamming";
+        case WindowType::Blackman:    return "Blackman";
+    }
+    return "Unknown";
+}
+
+const char* SpectrumAnalyzer::windowTypeTooltip(WindowType type)
+{
+    switch (type) {
+        case WindowType::Rectangular:
+            return "Rectangular (no window)\n"
+                   "Best frequency resolution\n"
+                   "Worst spectral leakage\n"
+                   "Main lobe: narrowest\n"
+                   "Sidelobes: -13 dB";
+        case WindowType::Hann:
+            return "Hann (raised cosine)\n"
+                   "Good resolution/leakage balance\n"
+                   "Main lobe: 1.5x rectangular\n"
+                   "Sidelobes: -32 dB";
+        case WindowType::Hamming:
+            return "Hamming\n"
+                   "Optimized sidelobe level\n"
+                   "Main lobe: 1.5x rectangular\n"
+                   "Sidelobes: -43 dB";
+        case WindowType::Blackman:
+            return "Blackman\n"
+                   "Best spectral leakage suppression\n"
+                   "Main lobe: 2x rectangular\n"
+                   "Sidelobes: -58 dB";
+    }
+    return "";
+}
+
+void SpectrumAnalyzer::setWindowType(WindowType type)
+{
+    if (currentWindowType != type) {
+        currentWindowType = type;
+        rebuildWindow();
+    }
+}
+
+void SpectrumAnalyzer::rebuildWindow()
+{
+    // Rebuild the JUCE window function based on current type
+    juce::dsp::WindowingFunction<float>::WindowingMethod method;
+
+    switch (currentWindowType) {
+        case WindowType::Rectangular:
+            method = juce::dsp::WindowingFunction<float>::rectangular;
+            break;
+        case WindowType::Hann:
+            method = juce::dsp::WindowingFunction<float>::hann;
+            break;
+        case WindowType::Hamming:
+            method = juce::dsp::WindowingFunction<float>::hamming;
+            break;
+        case WindowType::Blackman:
+            method = juce::dsp::WindowingFunction<float>::blackman;
+            break;
+        default:
+            method = juce::dsp::WindowingFunction<float>::hann;
+            break;
+    }
+
+    window = std::make_unique<juce::dsp::WindowingFunction<float>>(FFTSize, method);
+
+    // Also store the window coefficients for visualization
+    windowCoefficients.fill(1.0f);
+    window->multiplyWithWindowingTable(windowCoefficients.data(), FFTSize);
 }
 
 //==============================================================================
@@ -175,6 +260,9 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
         }
     }
 
+    // Draw window selector (before other toggles so tooltip renders on top)
+    drawWindowSelector(g, fullBounds);
+
     // Draw harmonic markers toggle
     drawHarmonicToggle(g, fullBounds);
 
@@ -206,6 +294,12 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
         g.drawText("Even", static_cast<int>(fullBounds.getX() + 65),
                    static_cast<int>(legendY - 4), 30, 10, juce::Justification::centredLeft);
     }
+
+    // Draw window function inset
+    drawWindowInset(g, fullBounds);
+
+    // Draw window tooltip (last so it renders on top of everything)
+    drawWindowTooltip(g, fullBounds);
 }
 
 void SpectrumAnalyzer::renderEquations(juce::Graphics& g)
@@ -287,6 +381,30 @@ void SpectrumAnalyzer::mouseDown(const juce::MouseEvent& event)
         showHarmonicMarkers = !showHarmonicMarkers;
         repaint();
     }
+    else if (windowButtonBounds.contains(pos)) {
+        // Cycle through window types
+        int nextType = (static_cast<int>(currentWindowType) + 1) % 4;
+        setWindowType(static_cast<WindowType>(nextType));
+        repaint();
+    }
+}
+
+void SpectrumAnalyzer::mouseMove(const juce::MouseEvent& event)
+{
+    bool wasShowingTooltip = showWindowTooltip;
+    showWindowTooltip = windowButtonBounds.contains(event.position);
+
+    if (showWindowTooltip != wasShowingTooltip) {
+        repaint();
+    }
+}
+
+void SpectrumAnalyzer::mouseExit(const juce::MouseEvent& /*event*/)
+{
+    if (showWindowTooltip) {
+        showWindowTooltip = false;
+        repaint();
+    }
 }
 
 //==============================================================================
@@ -359,7 +477,7 @@ void SpectrumAnalyzer::processFFT()
 {
     std::copy(inputBuffer.begin(), inputBuffer.begin() + FFTSize, fftInput.begin());
 
-    window.multiplyWithWindowingTable(fftInput.data(), FFTSize);
+    window->multiplyWithWindowingTable(fftInput.data(), FFTSize);
 
     std::fill(fftOutput.begin(), fftOutput.end(), 0.0f);
     std::copy(fftInput.begin(), fftInput.end(), fftOutput.begin());
@@ -581,6 +699,161 @@ void SpectrumAnalyzer::drawHarmonicMarkers(juce::Graphics& g, juce::Rectangle<fl
         float labelY = bounds.getY() + 3 + (n % 2 == 0 ? 10.0f : 0.0f);
         g.drawText(label, static_cast<int>(x - 12), static_cast<int>(labelY),
                    24, 10, juce::Justification::centred);
+    }
+}
+
+void SpectrumAnalyzer::drawWindowSelector(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    float buttonWidth = 60.0f;
+    float buttonHeight = 18.0f;
+    float padding = 8.0f;
+
+    // Position to the left of the harmonics toggle
+    float harmonicsButtonRight = bounds.getRight() - (35.0f * 2 + 2.0f + padding) - 8.0f;
+    float startX = harmonicsButtonRight - 70.0f - buttonWidth - 8.0f;
+    float startY = bounds.getBottom() - buttonHeight - padding;
+
+    windowButtonBounds = juce::Rectangle<float>(startX, startY, buttonWidth, buttonHeight);
+
+    // Draw button background
+    g.setColour(juce::Colour(0xff3a3a3a));
+    g.fillRoundedRectangle(windowButtonBounds, 3.0f);
+
+    // Draw button border when hovered
+    if (showWindowTooltip) {
+        g.setColour(juce::Colour(0xff00e5ff).withAlpha(0.5f));
+        g.drawRoundedRectangle(windowButtonBounds, 3.0f, 1.0f);
+    }
+
+    // Draw window type name
+    g.setColour(juce::Colour(0xffffcc00));  // Yellow for window name
+    g.setFont(10.0f);
+    g.drawText(windowTypeToString(currentWindowType), windowButtonBounds, juce::Justification::centred);
+}
+
+void SpectrumAnalyzer::drawWindowInset(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    // Small inset in the top-left corner showing the window shape
+    float insetWidth = 60.0f;
+    float insetHeight = 35.0f;
+    float margin = 5.0f;
+
+    // Position below the header text
+    juce::Rectangle<float> insetBounds(
+        bounds.getX() + margin,
+        bounds.getY() + 50.0f,
+        insetWidth,
+        insetHeight
+    );
+
+    // Draw background
+    g.setColour(juce::Colour(0xaa16213e));
+    g.fillRoundedRectangle(insetBounds, 3.0f);
+
+    // Draw border
+    g.setColour(juce::Colour(0xff3a3a3a));
+    g.drawRoundedRectangle(insetBounds, 3.0f, 1.0f);
+
+    // Draw window shape
+    juce::Rectangle<float> graphBounds = insetBounds.reduced(4.0f, 4.0f);
+
+    juce::Path windowPath;
+    bool pathStarted = false;
+
+    // Sample the window function at regular intervals for display
+    int numPoints = 50;
+    int step = FFTSize / numPoints;
+
+    for (int i = 0; i < numPoints; ++i) {
+        int sampleIndex = i * step;
+        if (sampleIndex >= FFTSize) sampleIndex = FFTSize - 1;
+
+        float value = windowCoefficients[sampleIndex];
+        float x = graphBounds.getX() + (static_cast<float>(i) / static_cast<float>(numPoints - 1)) * graphBounds.getWidth();
+        float y = graphBounds.getBottom() - value * graphBounds.getHeight();
+
+        if (!pathStarted) {
+            windowPath.startNewSubPath(x, y);
+            pathStarted = true;
+        } else {
+            windowPath.lineTo(x, y);
+        }
+    }
+
+    // Draw filled area under the curve
+    if (pathStarted) {
+        juce::Path filledPath = windowPath;
+        filledPath.lineTo(graphBounds.getRight(), graphBounds.getBottom());
+        filledPath.lineTo(graphBounds.getX(), graphBounds.getBottom());
+        filledPath.closeSubPath();
+
+        g.setColour(juce::Colour(0xffffcc00).withAlpha(0.2f));
+        g.fillPath(filledPath);
+
+        g.setColour(juce::Colour(0xffffcc00).withAlpha(0.8f));
+        g.strokePath(windowPath, juce::PathStrokeType(1.5f));
+    }
+
+    // Draw label
+    g.setColour(juce::Colours::grey);
+    g.setFont(8.0f);
+    g.drawText("Window", static_cast<int>(insetBounds.getX()),
+               static_cast<int>(insetBounds.getBottom() + 1),
+               static_cast<int>(insetBounds.getWidth()), 10, juce::Justification::centred);
+}
+
+void SpectrumAnalyzer::drawWindowTooltip(juce::Graphics& g, juce::Rectangle<float> /*bounds*/)
+{
+    if (!showWindowTooltip) return;
+
+    // Get tooltip text for current window type
+    const char* tooltipText = windowTypeTooltip(currentWindowType);
+
+    juce::StringArray lines;
+    lines.addTokens(tooltipText, "\n", "");
+
+    float lineHeight = 13.0f;
+    float tooltipWidth = 180.0f;
+    float tooltipHeight = static_cast<float>(lines.size()) * lineHeight + 12.0f;
+
+    // Position tooltip above the window button
+    float tooltipX = windowButtonBounds.getX() - 50.0f;
+    float tooltipY = windowButtonBounds.getY() - tooltipHeight - 5.0f;
+
+    // Make sure tooltip stays within bounds
+    if (tooltipX < 5.0f) tooltipX = 5.0f;
+    if (tooltipY < 5.0f) tooltipY = windowButtonBounds.getBottom() + 5.0f;
+
+    juce::Rectangle<float> tooltipBounds(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
+
+    // Draw tooltip background
+    g.setColour(juce::Colour(0xee1a1a2e));
+    g.fillRoundedRectangle(tooltipBounds, 5.0f);
+
+    // Draw tooltip border
+    g.setColour(juce::Colour(0xffffcc00).withAlpha(0.5f));
+    g.drawRoundedRectangle(tooltipBounds, 5.0f, 1.0f);
+
+    // Draw tooltip text
+    g.setColour(juce::Colours::white);
+    float textY = tooltipBounds.getY() + 6.0f;
+
+    for (int i = 0; i < lines.size(); ++i) {
+        // First line (window name) in yellow and bold
+        if (i == 0) {
+            g.setColour(juce::Colour(0xffffcc00));
+            g.setFont(11.0f);
+        } else {
+            g.setColour(juce::Colours::white.withAlpha(0.9f));
+            g.setFont(10.0f);
+        }
+
+        g.drawText(lines[i], static_cast<int>(tooltipBounds.getX() + 8.0f),
+                   static_cast<int>(textY),
+                   static_cast<int>(tooltipBounds.getWidth() - 16.0f),
+                   static_cast<int>(lineHeight),
+                   juce::Justification::centredLeft);
+        textY += lineHeight;
     }
 }
 
