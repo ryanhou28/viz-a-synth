@@ -42,10 +42,11 @@ void EnvelopeVisualizer::parameterChanged(const juce::String& /*parameterID*/, f
 //==============================================================================
 void EnvelopeVisualizer::paint(juce::Graphics& g)
 {
+    auto& config = ConfigurationManager::getInstance();
     auto bounds = getLocalBounds().toFloat().reduced(2);
 
     // Background
-    g.setColour(juce::Colour(0xff1e1e1e));
+    g.setColour(config.getThemeColour("colors.envelope.background", juce::Colour(0xff1e1e1e)));
     g.fillRoundedRectangle(bounds, 6.0f);
 
     // Draw area - minimal padding to maximize graph area
@@ -159,7 +160,8 @@ void EnvelopeVisualizer::reset()
 //==============================================================================
 void EnvelopeVisualizer::drawGrid(juce::Graphics& g, juce::Rectangle<float> bounds)
 {
-    g.setColour(juce::Colour(0xff333333));
+    auto& config = ConfigurationManager::getInstance();
+    g.setColour(config.getThemeColour("colors.envelope.grid", juce::Colour(0xff333333)));
 
     // Horizontal grid lines (amplitude)
     for (int i = 0; i <= 4; ++i)
@@ -205,7 +207,7 @@ void EnvelopeVisualizer::drawEnvelopeCurve(juce::Graphics& g, juce::Rectangle<fl
     float peakY = bounds.getY();
 
     // Draw Attack segment
-    g.setColour(AttackColour);
+    g.setColour(getAttackColour());
     juce::Path attackPath;
     attackPath.startNewSubPath(startX, startY);
     attackPath.lineTo(attackEndX, peakY);
@@ -216,7 +218,7 @@ void EnvelopeVisualizer::drawEnvelopeCurve(juce::Graphics& g, juce::Rectangle<fl
     float decayEndX = bounds.getX() + timeToX(attack + decay, totalTime, bounds.getWidth());
     float sustainY = bounds.getBottom() - (sustain * bounds.getHeight());
 
-    g.setColour(DecayColour);
+    g.setColour(getDecayColour());
     juce::Path decayPath;
     decayPath.startNewSubPath(attackEndX, peakY);
     decayPath.lineTo(decayEndX, sustainY);
@@ -226,7 +228,7 @@ void EnvelopeVisualizer::drawEnvelopeCurve(juce::Graphics& g, juce::Rectangle<fl
     // Sustain segment (horizontal line)
     float sustainEndX = bounds.getX() + timeToX(attack + decay + SustainDisplayTime, totalTime, bounds.getWidth());
 
-    g.setColour(SustainColour);
+    g.setColour(getSustainColour());
     juce::Path sustainPath;
     sustainPath.startNewSubPath(decayEndX, sustainY);
     sustainPath.lineTo(sustainEndX, sustainY);
@@ -236,7 +238,7 @@ void EnvelopeVisualizer::drawEnvelopeCurve(juce::Graphics& g, juce::Rectangle<fl
     // Release segment (sustain to 0)
     float releaseEndX = bounds.getRight();
 
-    g.setColour(ReleaseColour);
+    g.setColour(getReleaseColour());
     juce::Path releasePath;
     releasePath.startNewSubPath(sustainEndX, sustainY);
     releasePath.lineTo(releaseEndX, bounds.getBottom());
@@ -247,9 +249,10 @@ void EnvelopeVisualizer::drawEnvelopeCurve(juce::Graphics& g, juce::Rectangle<fl
     envelopePath.lineTo(startX, startY);
     envelopePath.closeSubPath();
 
+    auto& config = ConfigurationManager::getInstance();
     juce::ColourGradient fillGradient(
-        juce::Colour(0x40ffffff), bounds.getX(), bounds.getY(),
-        juce::Colour(0x10ffffff), bounds.getX(), bounds.getBottom(),
+        config.getThemeColour("colors.envelope.fill", juce::Colour(0x40ffffff)), bounds.getX(), bounds.getY(),
+        config.getThemeColour("colors.envelope.fillBottom", juce::Colour(0x10ffffff)), bounds.getX(), bounds.getBottom(),
         false);
     g.setGradientFill(fillGradient);
     g.fillPath(envelopePath);
@@ -276,7 +279,7 @@ void EnvelopeVisualizer::drawPlayhead(juce::Graphics& g, juce::Rectangle<float> 
             progress = juce::jlimit(0.0f, 1.0f, progress);
             playheadX = bounds.getX() + timeToX(playheadTime, totalTime, bounds.getWidth());
             playheadY = bounds.getBottom() - (progress * bounds.getHeight());
-            playheadColour = AttackColour;
+            playheadColour = getAttackColour();
             break;
         }
         case EnvelopeState::Decay:
@@ -286,14 +289,14 @@ void EnvelopeVisualizer::drawPlayhead(juce::Graphics& g, juce::Rectangle<float> 
             float level = 1.0f - (1.0f - getSustain()) * progress;
             playheadX = bounds.getX() + timeToX(attack + playheadTime, totalTime, bounds.getWidth());
             playheadY = bounds.getBottom() - (level * bounds.getHeight());
-            playheadColour = DecayColour;
+            playheadColour = getDecayColour();
             break;
         }
         case EnvelopeState::Sustain:
         {
             playheadX = bounds.getX() + timeToX(attack + decay + std::fmod(playheadTime, SustainDisplayTime), totalTime, bounds.getWidth());
             playheadY = bounds.getBottom() - (getSustain() * bounds.getHeight());
-            playheadColour = SustainColour;
+            playheadColour = getSustainColour();
             break;
         }
         case EnvelopeState::Release:
@@ -303,7 +306,7 @@ void EnvelopeVisualizer::drawPlayhead(juce::Graphics& g, juce::Rectangle<float> 
             float level = releaseStartLevel * (1.0f - progress);
             playheadX = bounds.getX() + timeToX(attack + decay + SustainDisplayTime + playheadTime, totalTime, bounds.getWidth());
             playheadY = bounds.getBottom() - (level * bounds.getHeight());
-            playheadColour = ReleaseColour;
+            playheadColour = getReleaseColour();
             break;
         }
         default:
@@ -342,19 +345,19 @@ void EnvelopeVisualizer::drawLabels(juce::Graphics& g, juce::Rectangle<float> bo
     float labelHeight = 14;
 
     // Attack label
-    g.setColour(AttackColour);
+    g.setColour(getAttackColour());
     g.drawText("A", attackCenter - labelWidth / 2, labelY, labelWidth, labelHeight, juce::Justification::centred);
 
     // Decay label
-    g.setColour(DecayColour);
+    g.setColour(getDecayColour());
     g.drawText("D", decayCenter - labelWidth / 2, labelY, labelWidth, labelHeight, juce::Justification::centred);
 
     // Sustain label
-    g.setColour(SustainColour);
+    g.setColour(getSustainColour());
     g.drawText("S", sustainCenter - labelWidth / 2, labelY, labelWidth, labelHeight, juce::Justification::centred);
 
     // Release label
-    g.setColour(ReleaseColour);
+    g.setColour(getReleaseColour());
     g.drawText("R", releaseCenter - labelWidth / 2, labelY, labelWidth, labelHeight, juce::Justification::centred);
 
     // Draw amplitude axis labels
@@ -395,6 +398,28 @@ float EnvelopeVisualizer::timeToX(float time, float totalTime, float width) cons
 float EnvelopeVisualizer::getTotalDisplayTime() const
 {
     return getAttack() + getDecay() + SustainDisplayTime + getRelease();
+}
+
+//==============================================================================
+// Color helpers - get ADSR colors from configuration
+juce::Colour EnvelopeVisualizer::getAttackColour() const
+{
+    return ConfigurationManager::getInstance().getThemeColour("colors.envelope.attack", juce::Colour(0xff4caf50));
+}
+
+juce::Colour EnvelopeVisualizer::getDecayColour() const
+{
+    return ConfigurationManager::getInstance().getThemeColour("colors.envelope.decay", juce::Colour(0xffffc107));
+}
+
+juce::Colour EnvelopeVisualizer::getSustainColour() const
+{
+    return ConfigurationManager::getInstance().getThemeColour("colors.envelope.sustain", juce::Colour(0xff2196f3));
+}
+
+juce::Colour EnvelopeVisualizer::getReleaseColour() const
+{
+    return ConfigurationManager::getInstance().getThemeColour("colors.envelope.release", juce::Colour(0xfff44336));
 }
 
 } // namespace vizasynth

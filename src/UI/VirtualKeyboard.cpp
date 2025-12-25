@@ -127,10 +127,18 @@ void VirtualKeyboard::mouseUp(const juce::MouseEvent&)
 
 void VirtualKeyboard::paint(juce::Graphics& g)
 {
+    auto& config = vizasynth::ConfigurationManager::getInstance();
     auto bounds = getLocalBounds().toFloat();
 
+    // Get colors from config
+    auto bgColor = config.getThemeColour("colors.keyboard.background", juce::Colour(0xff1a1a1a));
+    auto whiteKeyColor = config.getThemeColour("colors.keyboard.whiteKey", juce::Colour(0xffdcdcdc));
+    auto blackKeyColor = config.getThemeColour("colors.keyboard.blackKey", juce::Colour(0xff2a2a2a));
+    auto pressedColor = config.getThemeColour("colors.keyboard.pressed", juce::Colour(0xffff6b00));
+    auto borderColor = config.getThemeColour("colors.keyboard.border", juce::Colour(0xff3a3a3a));
+
     // Background
-    g.setColour(juce::Colour(0xff1a1a1a));
+    g.setColour(bgColor);
     g.fillRect(bounds);
 
     // Draw white keys first
@@ -144,16 +152,16 @@ void VirtualKeyboard::paint(juce::Graphics& g)
             if (isPressed)
             {
                 float vel = activeNotes.count(note) ? activeNotes[note] : 0.8f;
-                g.setColour(juce::Colour(0xffff6b00).withAlpha(0.5f + vel * 0.5f));
+                g.setColour(pressedColor.withAlpha(0.5f + vel * 0.5f));
             }
             else
             {
-                g.setColour(juce::Colour(0xffdcdcdc));
+                g.setColour(whiteKeyColor);
             }
             g.fillRect(rect.reduced(1, 0));
 
             // Draw key border
-            g.setColour(juce::Colour(0xff3a3a3a));
+            g.setColour(borderColor);
             g.drawRect(rect.reduced(1, 0), 1.0f);
 
             // Draw note name on C keys
@@ -178,15 +186,15 @@ void VirtualKeyboard::paint(juce::Graphics& g)
             if (isPressed)
             {
                 float vel = activeNotes.count(note) ? activeNotes[note] : 0.8f;
-                g.setColour(juce::Colour(0xffff6b00).withAlpha(0.5f + vel * 0.5f));
+                g.setColour(pressedColor.withAlpha(0.5f + vel * 0.5f));
             }
             else
             {
-                g.setColour(juce::Colour(0xff2a2a2a));
+                g.setColour(blackKeyColor);
             }
             g.fillRect(rect);
 
-            g.setColour(juce::Colour(0xff1a1a1a));
+            g.setColour(bgColor);
             g.drawRect(rect, 1.0f);
         }
     }

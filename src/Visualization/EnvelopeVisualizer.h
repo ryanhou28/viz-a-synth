@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "../Core/Configuration.h"
 
 namespace vizasynth {
 
@@ -79,11 +80,11 @@ private:
     static constexpr float SustainDisplayTime = 0.3f;  // Fixed sustain display width in seconds
     static constexpr int RefreshRateHz = 60;
 
-    // Colors for each stage
-    static inline const juce::Colour AttackColour = juce::Colour(0xff4caf50);   // Green
-    static inline const juce::Colour DecayColour = juce::Colour(0xffffc107);    // Yellow/Amber
-    static inline const juce::Colour SustainColour = juce::Colour(0xff2196f3);  // Blue
-    static inline const juce::Colour ReleaseColour = juce::Colour(0xfff44336);  // Red
+    // Helper to get ADSR colors from config
+    juce::Colour getAttackColour() const;
+    juce::Colour getDecayColour() const;
+    juce::Colour getSustainColour() const;
+    juce::Colour getReleaseColour() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EnvelopeVisualizer)
 };

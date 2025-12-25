@@ -187,6 +187,39 @@ void ConfigurationManager::applyDefaults()
     themeTree.addChild(fonts, -1, nullptr);
 }
 
+// Recursive helper to convert JSON object to ValueTree
+static void jsonObjectToValueTree(juce::ValueTree& tree, const juce::var& json)
+{
+    if (auto* obj = json.getDynamicObject()) {
+        for (const auto& prop : obj->getProperties()) {
+            if (prop.value.isObject()) {
+                // Recursively handle nested objects
+                auto child = juce::ValueTree(prop.name);
+                jsonObjectToValueTree(child, prop.value);
+                tree.addChild(child, -1, nullptr);
+            } else if (prop.value.isArray()) {
+                // Handle arrays as child nodes
+                auto arrayNode = juce::ValueTree(prop.name);
+                auto* arr = prop.value.getArray();
+                for (int i = 0; i < arr->size(); ++i) {
+                    const auto& item = (*arr)[i];
+                    if (item.isObject()) {
+                        auto itemNode = juce::ValueTree("item");
+                        jsonObjectToValueTree(itemNode, item);
+                        arrayNode.addChild(itemNode, -1, nullptr);
+                    } else {
+                        arrayNode.setProperty(juce::String(i), item, nullptr);
+                    }
+                }
+                tree.addChild(arrayNode, -1, nullptr);
+            } else {
+                // Primitive value
+                tree.setProperty(prop.name, prop.value, nullptr);
+            }
+        }
+    }
+}
+
 bool ConfigurationManager::parseJsonToValueTree(const juce::File& file, juce::ValueTree& tree)
 {
     if (!file.existsAsFile())
@@ -198,39 +231,10 @@ bool ConfigurationManager::parseJsonToValueTree(const juce::File& file, juce::Va
     if (json.isVoid())
         return false;
 
-    // Convert JSON to ValueTree
-    // This is a simplified conversion - a full implementation would recursively
-    // convert all nested objects
-    if (auto* obj = json.getDynamicObject()) {
-        tree = juce::ValueTree(file.getFileNameWithoutExtension());
-
-        for (const auto& prop : obj->getProperties()) {
-            if (prop.value.isObject()) {
-                auto child = juce::ValueTree(prop.name);
-                if (auto* childObj = prop.value.getDynamicObject()) {
-                    for (const auto& childProp : childObj->getProperties()) {
-                        if (childProp.value.isObject()) {
-                            auto grandChild = juce::ValueTree(childProp.name);
-                            if (auto* grandChildObj = childProp.value.getDynamicObject()) {
-                                for (const auto& gcProp : grandChildObj->getProperties()) {
-                                    grandChild.setProperty(gcProp.name, gcProp.value, nullptr);
-                                }
-                            }
-                            child.addChild(grandChild, -1, nullptr);
-                        } else {
-                            child.setProperty(childProp.name, childProp.value, nullptr);
-                        }
-                    }
-                }
-                tree.addChild(child, -1, nullptr);
-            } else {
-                tree.setProperty(prop.name, prop.value, nullptr);
-            }
-        }
-        return true;
-    }
-
-    return false;
+    // Convert JSON to ValueTree using recursive helper
+    tree = juce::ValueTree(file.getFileNameWithoutExtension());
+    jsonObjectToValueTree(tree, json);
+    return tree.isValid();
 }
 
 bool ConfigurationManager::loadLayoutConfig(const juce::File& file)
@@ -536,5 +540,91 @@ bool ConfigurationManager::isFileWatchingEnabled() const
     return fileWatcher != nullptr;
 }
 #endif
+
+//=============================================================================
+// Path-Based Accessors
+//=============================================================================
+
+juce::var ConfigurationManager::getValueFromPath(const juce::ValueTree& tree, const juce::String& path) const
+{
+    auto parts = juce::StringArray::fromTokens(path, ".", "");
+    if (parts.isEmpty())
+        return {};
+
+    auto current = tree;
+
+    // Navigate to the parent node containing the final property
+    for (int i = 0; i < parts.size() - 1; ++i) {
+        current = current.getChildWithName(parts[i]);
+        if (!current.isValid())
+            return {};
+    }
+
+    // Return the property value
+    return current.getProperty(parts[parts.size() - 1]);
+}
+
+int ConfigurationManager::getLayoutInt(const juce::String& path, int defaultValue) const
+{
+    auto value = getValueFromPath(layoutTree, path);
+    if (value.isInt() || value.isDouble())
+        return static_cast<int>(value);
+    return defaultValue;
+}
+
+float ConfigurationManager::getLayoutFloat(const juce::String& path, float defaultValue) const
+{
+    auto value = getValueFromPath(layoutTree, path);
+    if (value.isDouble() || value.isInt())
+        return static_cast<float>(value);
+    return defaultValue;
+}
+
+juce::String ConfigurationManager::getLayoutString(const juce::String& path, const juce::String& defaultValue) const
+{
+    auto value = getValueFromPath(layoutTree, path);
+    if (value.isString())
+        return value.toString();
+    return defaultValue;
+}
+
+bool ConfigurationManager::getLayoutBool(const juce::String& path, bool defaultValue) const
+{
+    auto value = getValueFromPath(layoutTree, path);
+    if (value.isBool())
+        return static_cast<bool>(value);
+    return defaultValue;
+}
+
+juce::Colour ConfigurationManager::getThemeColour(const juce::String& path, juce::Colour defaultValue) const
+{
+    auto value = getValueFromPath(themeTree, path);
+    if (value.isString()) {
+        juce::String colourStr = value.toString();
+        // Handle hex color strings like "#1a1a2e" or "#1a1a2eff"
+        if (colourStr.startsWith("#")) {
+            colourStr = colourStr.substring(1);  // Remove '#'
+            // If 6 chars (RGB), prepend "ff" for full opacity
+            if (colourStr.length() == 6) {
+                colourStr = "ff" + colourStr;
+            }
+            // If 8 chars (RGBA), convert to ARGB by moving last 2 chars to front
+            else if (colourStr.length() == 8) {
+                juce::String alpha = colourStr.substring(6, 8);
+                colourStr = alpha + colourStr.substring(0, 6);
+            }
+        }
+        return juce::Colour::fromString(colourStr);
+    }
+    return defaultValue;
+}
+
+float ConfigurationManager::getThemeFontSize(const juce::String& sizeName, float defaultValue) const
+{
+    auto value = getValueFromPath(themeTree, "fonts.sizes." + sizeName);
+    if (value.isDouble() || value.isInt())
+        return static_cast<float>(value);
+    return defaultValue;
+}
 
 } // namespace vizasynth

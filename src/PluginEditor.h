@@ -41,6 +41,7 @@ private:
     void updateProbeButtons();
     void updateVisualizationMode();
     void setVisualizationMode(VisualizationMode mode);
+    void applyThemeToComponents();
 
     VizASynthAudioProcessor& audioProcessor;
 

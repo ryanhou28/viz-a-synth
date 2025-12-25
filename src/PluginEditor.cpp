@@ -228,6 +228,9 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     masterVolumeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "masterVolume", masterVolumeSlider);
 
+    // Apply theme colors to all components
+    applyThemeToComponents();
+
     // Start timer for UI updates (60 FPS)
     startTimerHz(60);
 }
@@ -247,113 +250,177 @@ void VizASynthAudioProcessorEditor::paint(juce::Graphics& g)
     g.fillAll(config.getBackgroundColour());
 
     // --- Draw three rounded panels for Oscillator, Filter, Envelope ---
-    g.setFont(18.0f);
-    int panelX = 30;
-    int oscPanelW = 320, oscPanelH = 80;
-    int filterPanelW = 320, filterPanelH = 150;
-    int envPanelW = 320, envPanelH = 230;
-    int panelSpacing = 22;
-    int oscY = 80;
+    int panelX = config.getLayoutInt("components.oscillatorPanel.x", 30);
+    int oscPanelW = config.getLayoutInt("components.oscillatorPanel.width", 320);
+    int oscPanelH = config.getLayoutInt("components.oscillatorPanel.height", 80);
+    int filterPanelW = config.getLayoutInt("components.filterPanel.width", 320);
+    int filterPanelH = config.getLayoutInt("components.filterPanel.height", 150);
+    int envPanelW = config.getLayoutInt("components.envelopePanel.width", 320);
+    int envPanelH = config.getLayoutInt("components.envelopePanel.height", 230);
+    int panelSpacing = config.getLayoutInt("components.panels.spacing", 22);
+    int oscY = config.getLayoutInt("components.oscillatorPanel.y", 80);
     int filterY = oscY + oscPanelH + panelSpacing;
     int envY = filterY + filterPanelH + panelSpacing;
-    int leftPanelTitleYOffset = 6;
-    int leftPanelTitleWidthOffset = 30;
-    int leftPanelTitleHeight = 28;
+    int leftPanelTitleYOffset = config.getLayoutInt("components.panels.titleYOffset", 6);
+    int leftPanelTitleWidthOffset = config.getLayoutInt("components.panels.titleWidthOffset", 30);
+    int leftPanelTitleHeight = config.getLayoutInt("components.panels.titleHeight", 28);
     juce::Colour leftPanelColour = config.getPanelBackgroundColour();
     juce::Colour panelTitleColour = config.getTextHighlightColour();
-    float panelCornerRadius = 15.0f;
-    float panelFontSize = 20.0f;
+    float panelCornerRadius = config.getLayoutFloat("components.panels.cornerRadius", 15.0f);
+    float panelFontSize = config.getLayoutFloat("components.panels.titleFontSize", 20.0f);
 
     // Oscillator panel
     g.setColour(leftPanelColour);
-    g.fillRoundedRectangle(panelX, oscY, oscPanelW, oscPanelH, panelCornerRadius);
+    g.fillRoundedRectangle(static_cast<float>(panelX), static_cast<float>(oscY), static_cast<float>(oscPanelW), static_cast<float>(oscPanelH), panelCornerRadius);
     g.setColour(panelTitleColour);
     g.setFont(panelFontSize);
     g.drawText("Oscillator", panelX, oscY + leftPanelTitleYOffset, oscPanelW - leftPanelTitleWidthOffset, leftPanelTitleHeight, juce::Justification::centred);
 
     // Filter panel
     g.setColour(leftPanelColour);
-    g.fillRoundedRectangle(panelX, filterY, filterPanelW, filterPanelH, panelCornerRadius);
+    g.fillRoundedRectangle(static_cast<float>(panelX), static_cast<float>(filterY), static_cast<float>(filterPanelW), static_cast<float>(filterPanelH), panelCornerRadius);
     g.setColour(panelTitleColour);
     g.setFont(panelFontSize);
     g.drawText("Filter", panelX, filterY + leftPanelTitleYOffset, filterPanelW - leftPanelTitleWidthOffset, leftPanelTitleHeight, juce::Justification::centred);
 
     // Envelope panel
     g.setColour(leftPanelColour);
-    g.fillRoundedRectangle(panelX, envY, envPanelW, envPanelH, panelCornerRadius);
+    g.fillRoundedRectangle(static_cast<float>(panelX), static_cast<float>(envY), static_cast<float>(envPanelW), static_cast<float>(envPanelH), panelCornerRadius);
     g.setColour(panelTitleColour);
     g.setFont(panelFontSize);
     g.drawText("Envelope", panelX, envY + leftPanelTitleYOffset, envPanelW - leftPanelTitleWidthOffset, leftPanelTitleHeight, juce::Justification::centred);
 
     // Keyboard panel background
-    g.setColour(juce::Colour(0xff2a2a2a));
-    g.fillRoundedRectangle(20, 590, getWidth() - 40, 100, 10);
+    int kbX = config.getLayoutInt("components.keyboardPanel.x", 20);
+    int kbMarginH = config.getLayoutInt("components.keyboardPanel.marginH", 40);
+    int kbHeight = config.getLayoutInt("components.keyboardPanel.height", 100);
+    float kbCornerRadius = config.getLayoutFloat("components.keyboardPanel.cornerRadius", 10.0f);
+    g.setColour(config.getThemeColour("colors.keyboard.panelBackground", juce::Colour(0xff2a2a2a)));
+    g.fillRoundedRectangle(static_cast<float>(kbX), 590.0f, static_cast<float>(getWidth() - kbMarginH), static_cast<float>(kbHeight), kbCornerRadius);
 }
 
 void VizASynthAudioProcessorEditor::resized()
 {
+    auto& config = vizasynth::ConfigurationManager::getInstance();
+
+    // Layout values loaded from configuration with fallback defaults
     struct Layout {
-        int margin = 5;
-        int panelSpacing = 22;
-        int panelInnerMargin = 18;
-        
+        int margin;
+        int panelSpacing;
+        int panelInnerMargin;
+
         // Left panel
-        int leftPanelWidth = 370;
-        int oscPanelH = 80;
-        int filterPanelH = 150;
-        int envPanelH = 230;
-        int oscPanelW = 320;
-        int filterPanelW = 320;
-        int envPanelW = 320;
-        int labelHeight = 22;
-        int comboHeight = 32;
-        int filterKnobSize = 80;
-        int filterKnobSpacing = 80;
-        int filterKnobYOffset = 2;
-        int envKnobSize = 80;
-        int envKnobSpacing = 2;
-        int envelopeVisHeight = 100;
-        int bottomAreaHeight = 110;
-        int volumeSectionWidth = 100;
-        int meterWidth = 20;
-        int masterVolumeLabelHeight = 18;
-        int oscTitleOffsetX = 30;
-        int oscComboOffsetX = 30;
-        int filterKnob1X = 80;
-        int filterKnob2X = 200;
-        int envKnobStartX = 28;
-        int envKnobYOffset = 2;
-        int filterLabelYOffset = 38;
-        int envVisYOffset = 38;
-        int envVisXOffset = 22;
+        int leftPanelWidth;
+        int oscPanelH;
+        int filterPanelH;
+        int envPanelH;
+        int oscPanelW;
+        int filterPanelW;
+        int envPanelW;
+        int labelHeight;
+        int comboHeight;
+        int filterKnobSize;
+        int filterKnobSpacing;
+        int filterKnobYOffset;
+        int envKnobSize;
+        int envKnobSpacing;
+        int envelopeVisHeight;
+        int bottomAreaHeight;
+        int volumeSectionWidth;
+        int meterWidth;
+        int masterVolumeLabelHeight;
+        int oscTitleOffsetX;
+        int oscComboOffsetX;
+        int oscComboX;
+        int oscComboWidth;
+        int filterKnob1X;
+        int filterKnob2X;
+        int envKnobStartX;
+        int envKnobYOffset;
+        int filterLabelYOffset;
+        int envVisYOffset;
+        int envVisXOffset;
         // Visualization controls
-        int vizControlAreaHPad = 5;
-        int vizControlAreaVPad = 10;
-        int vizControlAreaBottomPad = 60;
-        int vizControlAreaHeight = 50;
-        int vizControlScopeWidth = 60;
-        int vizControlScopeSpacing = 2;
-        int vizControlSpectrumWidth = 70;
-        int vizControlSectionSpacing = 12;
-        int vizControlProbeWidth = 45;
-        int vizControlProbeSpacing = 4;
-        int vizControlFreezeWidth = 55;
-        int vizControlClearWidth = 50;
-        int vizControlLabelWidth = 35;
-    } layout;
+        int vizControlAreaHPad;
+        int vizControlAreaVPad;
+        int vizControlAreaBottomPad;
+        int vizControlAreaHeight;
+        int vizControlScopeWidth;
+        int vizControlScopeSpacing;
+        int vizControlSpectrumWidth;
+        int vizControlSectionSpacing;
+        int vizControlProbeWidth;
+        int vizControlProbeSpacing;
+        int vizControlFreezeWidth;
+        int vizControlClearWidth;
+        int vizControlLabelWidth;
+        int bottomPaddingH;
+        int bottomPaddingV;
+
+        Layout(vizasynth::ConfigurationManager& c) :
+            margin(c.getLayoutInt("components.panels.margin", 5)),
+            panelSpacing(c.getLayoutInt("components.panels.spacing", 22)),
+            panelInnerMargin(c.getLayoutInt("components.panels.innerMargin", 18)),
+            leftPanelWidth(c.getLayoutInt("components.leftPanel.width", 370)),
+            oscPanelH(c.getLayoutInt("components.oscillatorPanel.height", 80)),
+            filterPanelH(c.getLayoutInt("components.filterPanel.height", 150)),
+            envPanelH(c.getLayoutInt("components.envelopePanel.height", 230)),
+            oscPanelW(c.getLayoutInt("components.oscillatorPanel.width", 320)),
+            filterPanelW(c.getLayoutInt("components.filterPanel.width", 320)),
+            envPanelW(c.getLayoutInt("components.envelopePanel.width", 320)),
+            labelHeight(c.getLayoutInt("components.oscillatorPanel.labelHeight", 22)),
+            comboHeight(c.getLayoutInt("components.oscillatorPanel.comboHeight", 32)),
+            filterKnobSize(c.getLayoutInt("components.filterPanel.knobSize", 80)),
+            filterKnobSpacing(c.getLayoutInt("components.filterPanel.knobSpacing", 80)),
+            filterKnobYOffset(c.getLayoutInt("components.filterPanel.knobYOffset", 2)),
+            envKnobSize(c.getLayoutInt("components.envelopePanel.knobSize", 80)),
+            envKnobSpacing(c.getLayoutInt("components.envelopePanel.knobSpacing", 2)),
+            envelopeVisHeight(c.getLayoutInt("components.envelopePanel.visHeight", 100)),
+            bottomAreaHeight(c.getLayoutInt("components.bottomArea.height", 110)),
+            volumeSectionWidth(c.getLayoutInt("components.volumeSection.width", 100)),
+            meterWidth(c.getLayoutInt("components.volumeSection.meterWidth", 20)),
+            masterVolumeLabelHeight(c.getLayoutInt("components.volumeSection.labelHeight", 18)),
+            oscTitleOffsetX(c.getLayoutInt("components.oscillatorPanel.comboOffsetX", 30)),
+            oscComboOffsetX(c.getLayoutInt("components.oscillatorPanel.comboOffsetX", 30)),
+            oscComboX(c.getLayoutInt("components.oscillatorPanel.comboX", 120)),
+            oscComboWidth(c.getLayoutInt("components.oscillatorPanel.comboWidth", 170)),
+            filterKnob1X(c.getLayoutInt("components.filterPanel.knob1X", 80)),
+            filterKnob2X(c.getLayoutInt("components.filterPanel.knob2X", 200)),
+            envKnobStartX(c.getLayoutInt("components.envelopePanel.knobStartX", 28)),
+            envKnobYOffset(c.getLayoutInt("components.envelopePanel.knobYOffset", 2)),
+            filterLabelYOffset(c.getLayoutInt("components.filterPanel.labelYOffset", 38)),
+            envVisYOffset(c.getLayoutInt("components.envelopePanel.visYOffset", 38)),
+            envVisXOffset(c.getLayoutInt("components.envelopePanel.visXOffset", 22)),
+            vizControlAreaHPad(c.getLayoutInt("components.vizControls.hPad", 5)),
+            vizControlAreaVPad(c.getLayoutInt("components.vizControls.vPad", 10)),
+            vizControlAreaBottomPad(c.getLayoutInt("components.vizControls.bottomPad", 60)),
+            vizControlAreaHeight(c.getLayoutInt("components.vizControls.areaHeight", 50)),
+            vizControlScopeWidth(c.getLayoutInt("components.buttons.scope.width", 60)),
+            vizControlScopeSpacing(c.getLayoutInt("components.vizControls.buttonSpacing", 2)),
+            vizControlSpectrumWidth(c.getLayoutInt("components.buttons.spectrum.width", 70)),
+            vizControlSectionSpacing(c.getLayoutInt("components.vizControls.sectionSpacing", 12)),
+            vizControlProbeWidth(c.getLayoutInt("components.buttons.probe.width", 45)),
+            vizControlProbeSpacing(c.getLayoutInt("components.vizControls.probeSpacing", 4)),
+            vizControlFreezeWidth(c.getLayoutInt("components.buttons.freeze.width", 55)),
+            vizControlClearWidth(c.getLayoutInt("components.buttons.clear.width", 50)),
+            vizControlLabelWidth(c.getLayoutInt("components.buttons.timeLabel.width", 35)),
+            bottomPaddingH(c.getLayoutInt("components.bottomArea.paddingH", 25)),
+            bottomPaddingV(c.getLayoutInt("components.bottomArea.paddingV", 5))
+        {}
+    } layout(config);
     
     auto bounds = getLocalBounds();
 
     // Bottom area for keyboard and volume controls
-    auto bottomArea = bounds.removeFromBottom(layout.bottomAreaHeight).reduced(25, 5);
+    auto bottomArea = bounds.removeFromBottom(layout.bottomAreaHeight).reduced(layout.bottomPaddingH, layout.bottomPaddingV);
     auto volumeSection = bottomArea.removeFromRight(layout.volumeSectionWidth);
-    volumeSection = volumeSection.reduced(5, 0);
+    volumeSection = volumeSection.reduced(config.getLayoutInt("components.volumeSection.paddingH", 5), 0);
     masterVolumeLabel.setBounds(volumeSection.removeFromTop(layout.masterVolumeLabelHeight));
     auto sliderAndMeter = volumeSection;
     auto meterArea = sliderAndMeter.removeFromRight(layout.meterWidth);
     levelMeter.setBounds(meterArea.reduced(0, 2));
     masterVolumeSlider.setBounds(sliderAndMeter);
-    virtualKeyboard.setBounds(bottomArea.reduced(0, 5));
+    virtualKeyboard.setBounds(bottomArea.reduced(0, config.getLayoutInt("components.keyboardPanel.paddingV", 5)));
 
     // --- Split main area into left (panels) and right (visualization) ---
     auto mainArea = bounds.reduced(layout.margin, layout.margin);
@@ -367,9 +434,9 @@ void VizASynthAudioProcessorEditor::resized()
     int envY = filterY + layout.filterPanelH + layout.panelSpacing;
 
     // Oscillator section (centered vertically in osc panel)
-    int oscComboY = oscY + 40;
+    int oscComboY = oscY + config.getLayoutInt("components.oscillatorPanel.comboY", 40);
     oscTypeLabel.setBounds(panelX + layout.panelInnerMargin + layout.oscComboOffsetX, oscComboY, 100, layout.labelHeight);
-    oscTypeCombo.setBounds(panelX + 120 + layout.oscComboOffsetX, oscComboY - 2, 170, layout.comboHeight);
+    oscTypeCombo.setBounds(panelX + layout.oscComboX + layout.oscComboOffsetX, oscComboY + config.getLayoutInt("components.oscillatorPanel.comboYOffset", -2), layout.oscComboWidth, layout.comboHeight);
 
     // Filter section (centered vertically in filter panel)
     int filterLabelY = filterY + layout.filterLabelYOffset;
@@ -474,8 +541,70 @@ void VizASynthAudioProcessorEditor::timerCallback()
 
 void VizASynthAudioProcessorEditor::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
-    // Configuration has changed, trigger a repaint
+    // Configuration has changed - apply theme updates and re-layout
+    applyThemeToComponents();
+    resized();
     repaint();
+}
+
+void VizASynthAudioProcessorEditor::applyThemeToComponents()
+{
+    auto& config = vizasynth::ConfigurationManager::getInstance();
+
+    // Apply slider colors
+    auto thumbColor = config.getThemeColour("colors.sliders.rotaryFill", juce::Colour(0xff4CAF50));
+    auto trackColor = config.getThemeColour("colors.sliders.rotaryOutline", juce::Colour(0xff2d2d44));
+    auto textBoxBg = config.getThemeColour("colors.sliders.textBox", juce::Colour(0xff1a1a2e));
+    auto textBoxText = config.getThemeColour("colors.sliders.textBoxText", juce::Colour(0xffe0e0e0));
+    auto textBoxOutline = config.getThemeColour("colors.sliders.textBoxOutline", juce::Colour(0xff3d3d54));
+
+    for (auto* slider : {&cutoffSlider, &resonanceSlider, &attackSlider,
+                         &decaySlider, &sustainSlider, &releaseSlider}) {
+        slider->setColour(juce::Slider::rotarySliderFillColourId, thumbColor);
+        slider->setColour(juce::Slider::rotarySliderOutlineColourId, trackColor);
+        slider->setColour(juce::Slider::textBoxBackgroundColourId, textBoxBg);
+        slider->setColour(juce::Slider::textBoxTextColourId, textBoxText);
+        slider->setColour(juce::Slider::textBoxOutlineColourId, textBoxOutline);
+    }
+
+    // Linear sliders (masterVolume, timeWindow)
+    masterVolumeSlider.setColour(juce::Slider::thumbColourId, thumbColor);
+    masterVolumeSlider.setColour(juce::Slider::trackColourId, trackColor);
+    masterVolumeSlider.setColour(juce::Slider::textBoxBackgroundColourId, textBoxBg);
+    masterVolumeSlider.setColour(juce::Slider::textBoxTextColourId, textBoxText);
+    masterVolumeSlider.setColour(juce::Slider::textBoxOutlineColourId, textBoxOutline);
+
+    timeWindowSlider.setColour(juce::Slider::thumbColourId, thumbColor);
+    timeWindowSlider.setColour(juce::Slider::trackColourId, trackColor);
+    timeWindowSlider.setColour(juce::Slider::textBoxBackgroundColourId, textBoxBg);
+    timeWindowSlider.setColour(juce::Slider::textBoxTextColourId, textBoxText);
+    timeWindowSlider.setColour(juce::Slider::textBoxOutlineColourId, textBoxOutline);
+
+    // Apply button colors
+    auto buttonDefault = config.getThemeColour("colors.buttons.default", config.getPanelBackgroundColour());
+    auto buttonText = config.getThemeColour("colors.buttons.text", juce::Colour(0xffe0e0e0));
+    auto toggleOnColor = config.getThemeColour("colors.buttons.toggleOn", juce::Colours::red.darker());
+
+    for (auto* btn : {&scopeButton, &spectrumButton, &probeOscButton, &probeFilterButton,
+                      &probeOutputButton, &clearTraceButton}) {
+        btn->setColour(juce::TextButton::buttonColourId, buttonDefault);
+        btn->setColour(juce::TextButton::textColourOffId, buttonText);
+    }
+
+    freezeButton.setColour(juce::TextButton::buttonColourId, buttonDefault);
+    freezeButton.setColour(juce::TextButton::buttonOnColourId, toggleOnColor);
+    freezeButton.setColour(juce::TextButton::textColourOffId, buttonText);
+
+    // Apply label colors
+    auto labelColor = config.getThemeColour("colors.labels.text", juce::Colour(0xffe0e0e0));
+    for (auto* label : {&oscTypeLabel, &cutoffLabel, &resonanceLabel, &attackLabel,
+                        &decayLabel, &sustainLabel, &releaseLabel, &masterVolumeLabel, &timeWindowLabel}) {
+        label->setColour(juce::Label::textColourId, labelColor);
+    }
+
+    // Update visualization mode button colors (keep current active state)
+    updateVisualizationMode();
+    updateProbeButtons();
 }
 
 void VizASynthAudioProcessorEditor::updateProbeButtons()

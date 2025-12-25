@@ -125,6 +125,47 @@ public:
     float getFontSizeEquation() const;
 
     //=========================================================================
+    // Path-Based Accessors (Generic Configuration Access)
+    //=========================================================================
+
+    /**
+     * Get an integer value from layout config using dot-notation path.
+     * Example: getLayoutInt("components.filterPanel.knobSize", 80)
+     * @param path Dot-separated path to the value
+     * @param defaultValue Value to return if path not found
+     */
+    int getLayoutInt(const juce::String& path, int defaultValue) const;
+
+    /**
+     * Get a float value from layout config using dot-notation path.
+     */
+    float getLayoutFloat(const juce::String& path, float defaultValue) const;
+
+    /**
+     * Get a string value from layout config using dot-notation path.
+     */
+    juce::String getLayoutString(const juce::String& path, const juce::String& defaultValue) const;
+
+    /**
+     * Get a boolean value from layout config using dot-notation path.
+     */
+    bool getLayoutBool(const juce::String& path, bool defaultValue) const;
+
+    /**
+     * Get a color from theme config using dot-notation path.
+     * Example: getThemeColour("colors.envelope.attack", juce::Colours::green)
+     * @param path Dot-separated path to the color value
+     * @param defaultValue Color to return if path not found
+     */
+    juce::Colour getThemeColour(const juce::String& path, juce::Colour defaultValue) const;
+
+    /**
+     * Get a font size from theme config by name.
+     * Example: getThemeFontSize("panelTitle", 20.0f)
+     */
+    float getThemeFontSize(const juce::String& sizeName, float defaultValue) const;
+
+    //=========================================================================
     // Sample Rate
     //=========================================================================
 
@@ -176,6 +217,11 @@ private:
      * Get a color from the theme tree with fallback.
      */
     juce::Colour getColourFromTheme(const juce::String& path, juce::Colour fallback) const;
+
+    /**
+     * Get a value from a ValueTree using dot-notation path.
+     */
+    juce::var getValueFromPath(const juce::ValueTree& tree, const juce::String& path) const;
 
     juce::ValueTree layoutTree;
     juce::ValueTree themeTree;

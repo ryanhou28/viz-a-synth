@@ -33,10 +33,19 @@ void LevelMeter::mouseDown(const juce::MouseEvent&)
 
 void LevelMeter::paint(juce::Graphics& g)
 {
+    auto& config = vizasynth::ConfigurationManager::getInstance();
     auto bounds = getLocalBounds().toFloat();
 
+    // Get colors from config
+    auto bgColor = config.getThemeColour("colors.levelMeter.background", juce::Colour(0xff1a1a1a));
+    auto greenColor = config.getThemeColour("colors.levelMeter.green", juce::Colours::green);
+    auto yellowColor = config.getThemeColour("colors.levelMeter.yellow", juce::Colours::yellow);
+    auto redColor = config.getThemeColour("colors.levelMeter.red", juce::Colours::red);
+    auto borderColor = config.getThemeColour("colors.levelMeter.border", juce::Colour(0xff3a3a3a));
+    auto clipColor = config.getThemeColour("colors.levelMeter.clip", juce::Colours::red);
+
     // Background
-    g.setColour(juce::Colour(0xff1a1a1a));
+    g.setColour(bgColor);
     g.fillRoundedRectangle(bounds, 3.0f);
 
     // Meter area
@@ -55,11 +64,11 @@ void LevelMeter::paint(juce::Graphics& g)
     // Gradient: green -> yellow -> red
     juce::Colour meterColour;
     if (normalizedLevel < 0.6f)
-        meterColour = juce::Colours::green;
+        meterColour = greenColor;
     else if (normalizedLevel < 0.85f)
-        meterColour = juce::Colours::yellow;
+        meterColour = yellowColor;
     else
-        meterColour = juce::Colours::red;
+        meterColour = redColor;
 
     g.setColour(meterColour);
     g.fillRect(fillRect);
@@ -67,11 +76,11 @@ void LevelMeter::paint(juce::Graphics& g)
     // Clipping indicator at top
     if (clipping)
     {
-        g.setColour(juce::Colours::red);
+        g.setColour(clipColor);
         g.fillRect(bounds.removeFromTop(6).reduced(2, 1));
     }
 
     // Border
-    g.setColour(juce::Colour(0xff3a3a3a));
+    g.setColour(borderColor);
     g.drawRoundedRectangle(getLocalBounds().toFloat(), 3.0f, 1.0f);
 }

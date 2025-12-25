@@ -29,5 +29,118 @@
         { "type": "bode", "row": 1, "col": 1 }
       ]
     }
+  },
+  "components": {
+    "panels": {
+      "margin": 5,
+      "spacing": 22,
+      "innerMargin": 18,
+      "cornerRadius": 15.0,
+      "titleFontSize": 20.0,
+      "titleYOffset": 6,
+      "titleHeight": 28,
+      "titleWidthOffset": 30
+    },
+    "leftPanel": {
+      "width": 370
+    },
+    "oscillatorPanel": {
+      "x": 30,
+      "y": 80,
+      "width": 320,
+      "height": 80,
+      "comboOffsetX": 30,
+      "comboX": 120,
+      "comboWidth": 170,
+      "comboHeight": 32,
+      "comboYOffset": -2,
+      "labelHeight": 22,
+      "comboY": 40
+    },
+    "filterPanel": {
+      "width": 320,
+      "height": 150,
+      "knobSize": 80,
+      "knobSpacing": 80,
+      "knobYOffset": 2,
+      "knob1X": 80,
+      "knob2X": 200,
+      "labelYOffset": 38,
+      "textBoxWidth": 60,
+      "textBoxHeight": 20
+    },
+    "envelopePanel": {
+      "width": 320,
+      "height": 230,
+      "knobSize": 80,
+      "knobSpacing": 2,
+      "knobStartX": 28,
+      "knobYOffset": 2,
+      "visHeight": 100,
+      "visYOffset": 38,
+      "visXOffset": 22,
+      "textBoxWidth": 40,
+      "textBoxHeight": 20
+    },
+    "bottomArea": {
+      "height": 110,
+      "paddingH": 25,
+      "paddingV": 5
+    },
+    "volumeSection": {
+      "width": 100,
+      "paddingH": 5,
+      "meterWidth": 20,
+      "labelHeight": 18,
+      "textBoxWidth": 60,
+      "textBoxHeight": 20
+    },
+    "keyboardPanel": {
+      "x": 20,
+      "y": 590,
+      "marginH": 40,
+      "height": 100,
+      "cornerRadius": 10,
+      "paddingV": 5
+    },
+    "vizControls": {
+      "areaHeight": 50,
+      "hPad": 5,
+      "vPad": 10,
+      "bottomPad": 60,
+      "buttonSpacing": 2,
+      "sectionSpacing": 12,
+      "probeSpacing": 4
+    },
+    "buttons": {
+      "scope": {
+        "width": 60
+      },
+      "spectrum": {
+        "width": 70
+      },
+      "probe": {
+        "width": 45
+      },
+      "freeze": {
+        "width": 55
+      },
+      "clear": {
+        "width": 50
+      },
+      "timeLabel": {
+        "width": 35
+      }
+    },
+    "sliders": {
+      "timeWindow": {
+        "textBoxWidth": 50,
+        "textBoxHeight": 20,
+        "minValue": 1.0,
+        "maxValue": 50.0,
+        "step": 0.5,
+        "defaultValue": 10.0
+      }
+    }
   }
 }
