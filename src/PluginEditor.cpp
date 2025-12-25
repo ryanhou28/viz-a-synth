@@ -15,8 +15,12 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
                           throw std::runtime_error("No voices available to provide an oscillator.");
                       }())
 {
-    // Set editor size (expanded for keyboard)
-    setSize(1000, 700);
+    // Set editor size from configuration
+    auto& config = vizasynth::ConfigurationManager::getInstance();
+    setSize(config.getWindowWidth(), config.getWindowHeight());
+
+    // Register for configuration changes
+    config.addChangeListener(this);
 
     // Add visualization components
     addAndMakeVisible(oscilloscope);
@@ -25,12 +29,12 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
 
     // Setup visualization mode selector buttons
     scopeButton.setClickingTogglesState(false);
-    scopeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff4a4a4a));
+    scopeButton.setColour(juce::TextButton::buttonColourId, config.getAccentColour());
     scopeButton.onClick = [this]() { setVisualizationMode(VisualizationMode::Oscilloscope); };
     addAndMakeVisible(scopeButton);
 
     spectrumButton.setClickingTogglesState(false);
-    spectrumButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+    spectrumButton.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
     spectrumButton.onClick = [this]() { setVisualizationMode(VisualizationMode::Spectrum); };
     addAndMakeVisible(spectrumButton);
 
@@ -38,10 +42,10 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     setVisualizationMode(VisualizationMode::Oscilloscope);
 
     // Setup probe selector buttons
-    auto setupProbeButton = [this](juce::TextButton& button, vizasynth::ProbePoint probe, juce::Colour colour)
+    auto setupProbeButton = [this, &config](juce::TextButton& button, vizasynth::ProbePoint probe, juce::Colour colour)
     {
         button.setClickingTogglesState(false);
-        button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+        button.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
         button.setColour(juce::TextButton::textColourOffId, colour);
         button.onClick = [this, probe]()
         {
@@ -57,7 +61,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
 
     // Freeze button
     freezeButton.setClickingTogglesState(true);
-    freezeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+    freezeButton.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
     freezeButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::red.darker());
     freezeButton.onClick = [this]()
     {
@@ -69,7 +73,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     addAndMakeVisible(freezeButton);
 
     // Clear trace button
-    clearTraceButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+    clearTraceButton.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
     clearTraceButton.onClick = [this]()
     {
         oscilloscope.clearFrozenTrace();
@@ -220,21 +224,24 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
 VizASynthAudioProcessorEditor::~VizASynthAudioProcessorEditor()
 {
     stopTimer();
+    vizasynth::ConfigurationManager::getInstance().removeChangeListener(this);
 }
 
 //==============================================================================
 void VizASynthAudioProcessorEditor::paint(juce::Graphics& g)
 {
+    auto& config = vizasynth::ConfigurationManager::getInstance();
+
     // Dark background
-    g.fillAll(juce::Colour(0xff1a1a1a));
+    g.fillAll(config.getBackgroundColour());
 
     // Title
-    g.setColour(juce::Colours::white);
+    g.setColour(config.getTextHighlightColour());
     g.setFont(24.0f);
     g.drawText("Viz-A-Synth", 10, 10, getWidth() - 20, 40, juce::Justification::centred);
 
     // Control panel background
-    g.setColour(juce::Colour(0xff2a2a2a));
+    g.setColour(config.getPanelBackgroundColour());
     g.fillRoundedRectangle(20, 60, 350, 520, 10);
 
     // Keyboard panel background
@@ -373,20 +380,27 @@ void VizASynthAudioProcessorEditor::timerCallback()
     }
 }
 
+void VizASynthAudioProcessorEditor::changeListenerCallback(juce::ChangeBroadcaster* source)
+{
+    // Configuration has changed, trigger a repaint
+    repaint();
+}
+
 void VizASynthAudioProcessorEditor::updateProbeButtons()
 {
+    auto& config = vizasynth::ConfigurationManager::getInstance();
     auto activeProbe = audioProcessor.getProbeManager().getActiveProbe();
 
-    auto highlightButton = [](juce::TextButton& button, bool active, juce::Colour colour)
+    auto highlightButton = [&config](juce::TextButton& button, bool active, juce::Colour colour)
     {
         if (active)
         {
             button.setColour(juce::TextButton::buttonColourId, colour.darker(0.3f));
-            button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            button.setColour(juce::TextButton::textColourOffId, config.getTextHighlightColour());
         }
         else
         {
-            button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+            button.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
             button.setColour(juce::TextButton::textColourOffId, colour);
         }
     };
@@ -407,6 +421,7 @@ void VizASynthAudioProcessorEditor::setVisualizationMode(VisualizationMode mode)
 
 void VizASynthAudioProcessorEditor::updateVisualizationMode()
 {
+    auto& config = vizasynth::ConfigurationManager::getInstance();
     bool isScope = (currentVizMode == VisualizationMode::Oscilloscope);
 
     // Show/hide appropriate visualization
@@ -416,9 +431,9 @@ void VizASynthAudioProcessorEditor::updateVisualizationMode()
 
     // Update button highlighting
     scopeButton.setColour(juce::TextButton::buttonColourId,
-                          isScope ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff3a3a3a));
+                          isScope ? config.getAccentColour() : config.getPanelBackgroundColour());
     spectrumButton.setColour(juce::TextButton::buttonColourId,
-                             !isScope ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff3a3a3a));
+                             !isScope ? config.getAccentColour() : config.getPanelBackgroundColour());
 
     // Show/hide time window control (only relevant for oscilloscope)
     timeWindowSlider.setEnabled(isScope);

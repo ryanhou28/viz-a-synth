@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Core/Configuration.h"
 
 using namespace vizasynth;
 
@@ -175,6 +176,31 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
+    // Load configuration files
+    auto executableDir = juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
+    auto configDir = executableDir.getChildFile("config");
+
+    // Search up the directory tree to find the config folder
+    if (!configDir.exists()) {
+        auto searchDir = executableDir;
+        for (int i = 0; i < 6; ++i) {  // Search up to 6 levels
+            searchDir = searchDir.getParentDirectory();
+            auto candidate = searchDir.getChildFile("config");
+            if (candidate.exists() && candidate.getChildFile("theme.json").exists()) {
+                configDir = candidate;
+                break;
+            }
+        }
+    }
+
+    // Load configuration from directory
+    ConfigurationManager::getInstance().loadFromDirectory(configDir);
+
+#if JUCE_DEBUG
+    // Enable hot-reload in debug builds
+    ConfigurationManager::getInstance().enableFileWatching(configDir);
+#endif
+
     // Add voices to synthesizer
     for (int i = 0; i < 8; ++i)
     {

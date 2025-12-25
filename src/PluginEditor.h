@@ -6,6 +6,7 @@
 #include "Visualization/SingleCycleView.h"
 #include "UI/LevelMeter.h"
 #include "UI/VirtualKeyboard.h"
+#include "Core/Configuration.h"
 
 //==============================================================================
 /**
@@ -22,7 +23,8 @@ enum class VisualizationMode
  * Main editor UI for Viz-A-Synth
  */
 class VizASynthAudioProcessorEditor : public juce::AudioProcessorEditor,
-                                       private juce::Timer
+                                       private juce::Timer,
+                                       public juce::ChangeListener
 {
 public:
     VizASynthAudioProcessorEditor(VizASynthAudioProcessor&);
@@ -34,6 +36,7 @@ public:
 
 private:
     void timerCallback() override;
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     void updateProbeButtons();
     void updateVisualizationMode();
     void setVisualizationMode(VisualizationMode mode);

@@ -367,7 +367,21 @@ juce::Colour ConfigurationManager::getColourFromTheme(const juce::String& path, 
 
     auto value = tree.getProperty(parts[parts.size() - 1]);
     if (value.isString()) {
-        return juce::Colour::fromString(value.toString());
+        juce::String colourStr = value.toString();
+        // Handle hex color strings like "#1a1a2e" or "#1a1a2eff"
+        if (colourStr.startsWith("#")) {
+            colourStr = colourStr.substring(1);  // Remove '#'
+            // If 6 chars (RGB), prepend "ff" for full opacity
+            if (colourStr.length() == 6) {
+                colourStr = "ff" + colourStr;
+            }
+            // If 8 chars (RGBA), convert to ARGB by moving last 2 chars to front
+            else if (colourStr.length() == 8) {
+                juce::String alpha = colourStr.substring(6, 8);
+                colourStr = alpha + colourStr.substring(0, 6);
+            }
+        }
+        return juce::Colour::fromString(colourStr);
     }
     return fallback;
 }
