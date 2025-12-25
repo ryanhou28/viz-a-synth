@@ -4,6 +4,7 @@
 #include "Visualization/Oscilloscope.h"
 #include "Visualization/SpectrumAnalyzer.h"
 #include "Visualization/SingleCycleView.h"
+#include "Visualization/EnvelopeVisualizer.h"
 #include "UI/LevelMeter.h"
 #include "UI/VirtualKeyboard.h"
 #include "Core/Configuration.h"
@@ -43,10 +44,14 @@ private:
 
     VizASynthAudioProcessor& audioProcessor;
 
+    // Track active note count for envelope visualization
+    int lastActiveNoteCount = 0;
+
     // Visualization
     vizasynth::Oscilloscope oscilloscope;
     vizasynth::SpectrumAnalyzer spectrumAnalyzer;
     vizasynth::SingleCycleView singleCycleView;
+    vizasynth::EnvelopeVisualizer envelopeVisualizer;
     VisualizationMode currentVizMode = VisualizationMode::Oscilloscope;
 
     // Visualization mode selector

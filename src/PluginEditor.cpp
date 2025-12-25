@@ -13,7 +13,8 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
                               return voice->getOscillator();
                           }
                           throw std::runtime_error("No voices available to provide an oscillator.");
-                      }())
+                      }()),
+      envelopeVisualizer(p.getAPVTS())
 {
     // Set editor size from configuration
     auto& config = vizasynth::ConfigurationManager::getInstance();
@@ -26,6 +27,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     addAndMakeVisible(oscilloscope);
     addAndMakeVisible(spectrumAnalyzer);
     addAndMakeVisible(singleCycleView);
+    addAndMakeVisible(envelopeVisualizer);
 
     // Setup visualization mode selector buttons
     scopeButton.setClickingTogglesState(false);
@@ -111,9 +113,12 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     oscTypeLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(oscTypeLabel);
 
+    int filterSliderTextWidth = 60;
+    int filterSliderTextHeight = 20;
+
     // Setup filter cutoff slider
     cutoffSlider.setSliderStyle(juce::Slider::Rotary);
-    cutoffSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 80, 20);
+    cutoffSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, filterSliderTextWidth, filterSliderTextHeight);
     addAndMakeVisible(cutoffSlider);
 
     cutoffLabel.setText("Cutoff", juce::dontSendNotification);
@@ -122,49 +127,50 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
 
     // Setup filter resonance slider
     resonanceSlider.setSliderStyle(juce::Slider::Rotary);
-    resonanceSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 80, 20);
+    resonanceSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, filterSliderTextWidth, filterSliderTextHeight);
     addAndMakeVisible(resonanceSlider);
 
     resonanceLabel.setText("Resonance", juce::dontSendNotification);
     resonanceLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(resonanceLabel);
 
-    // Setup ADSR sliders
-    attackSlider.setSliderStyle(juce::Slider::LinearVertical);
-    attackSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 20);
-    addAndMakeVisible(attackSlider);
+    // Setup ADSR sliders as rotary knobs (match cutoff/resonance value box size)
+    int adsrTextBoxWidth = 40;
+    int adsrTextBoxHeight = filterSliderTextHeight;
 
+    attackSlider.setSliderStyle(juce::Slider::Rotary);
+    attackSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, adsrTextBoxWidth, adsrTextBoxHeight);
+    addAndMakeVisible(attackSlider);
     attackLabel.setText("Attack", juce::dontSendNotification);
     attackLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(attackLabel);
 
-    decaySlider.setSliderStyle(juce::Slider::LinearVertical);
-    decaySlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 20);
+    decaySlider.setSliderStyle(juce::Slider::Rotary);
+    decaySlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, adsrTextBoxWidth, adsrTextBoxHeight);
     addAndMakeVisible(decaySlider);
-
     decayLabel.setText("Decay", juce::dontSendNotification);
     decayLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(decayLabel);
 
-    sustainSlider.setSliderStyle(juce::Slider::LinearVertical);
-    sustainSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 20);
+    sustainSlider.setSliderStyle(juce::Slider::Rotary);
+    sustainSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, adsrTextBoxWidth, adsrTextBoxHeight);
     addAndMakeVisible(sustainSlider);
-
     sustainLabel.setText("Sustain", juce::dontSendNotification);
     sustainLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(sustainLabel);
 
-    releaseSlider.setSliderStyle(juce::Slider::LinearVertical);
-    releaseSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 20);
+    releaseSlider.setSliderStyle(juce::Slider::Rotary);
+    releaseSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, adsrTextBoxWidth, adsrTextBoxHeight);
     addAndMakeVisible(releaseSlider);
-
     releaseLabel.setText("Release", juce::dontSendNotification);
     releaseLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(releaseLabel);
 
     // Setup master volume slider
+    int masterVolumeTextWidth = 60;
+    int masterVolumeTextHeight = 20;
     masterVolumeSlider.setSliderStyle(juce::Slider::LinearVertical);
-    masterVolumeSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 20);
+    masterVolumeSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, masterVolumeTextWidth, masterVolumeTextHeight);
     addAndMakeVisible(masterVolumeSlider);
 
     masterVolumeLabel.setText("Volume", juce::dontSendNotification);
@@ -181,6 +187,11 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     // Setup virtual keyboard
     virtualKeyboard.setNoteCallback([this](const juce::MidiMessage& msg) {
         audioProcessor.addMidiMessage(msg);
+        // Trigger envelope visualization
+        if (msg.isNoteOn())
+            envelopeVisualizer.triggerEnvelope();
+        else if (msg.isNoteOff())
+            envelopeVisualizer.releaseEnvelope();
     });
     virtualKeyboard.setActiveNotesCallback([this]() {
         std::vector<std::pair<int, float>> notes;
@@ -235,52 +246,168 @@ void VizASynthAudioProcessorEditor::paint(juce::Graphics& g)
     // Dark background
     g.fillAll(config.getBackgroundColour());
 
-    // Title
-    g.setColour(config.getTextHighlightColour());
-    g.setFont(24.0f);
-    g.drawText("Viz-A-Synth", 10, 10, getWidth() - 20, 40, juce::Justification::centred);
+    // --- Draw three rounded panels for Oscillator, Filter, Envelope ---
+    g.setFont(18.0f);
+    int panelX = 30;
+    int oscPanelW = 320, oscPanelH = 80;
+    int filterPanelW = 320, filterPanelH = 150;
+    int envPanelW = 320, envPanelH = 230;
+    int panelSpacing = 22;
+    int oscY = 80;
+    int filterY = oscY + oscPanelH + panelSpacing;
+    int envY = filterY + filterPanelH + panelSpacing;
+    int leftPanelTitleYOffset = 6;
+    int leftPanelTitleWidthOffset = 30;
+    int leftPanelTitleHeight = 28;
+    juce::Colour leftPanelColour = config.getPanelBackgroundColour();
+    juce::Colour panelTitleColour = config.getTextHighlightColour();
+    float panelCornerRadius = 15.0f;
+    float panelFontSize = 20.0f;
 
-    // Control panel background
-    g.setColour(config.getPanelBackgroundColour());
-    g.fillRoundedRectangle(20, 60, 350, 520, 10);
+    // Oscillator panel
+    g.setColour(leftPanelColour);
+    g.fillRoundedRectangle(panelX, oscY, oscPanelW, oscPanelH, panelCornerRadius);
+    g.setColour(panelTitleColour);
+    g.setFont(panelFontSize);
+    g.drawText("Oscillator", panelX, oscY + leftPanelTitleYOffset, oscPanelW - leftPanelTitleWidthOffset, leftPanelTitleHeight, juce::Justification::centred);
+
+    // Filter panel
+    g.setColour(leftPanelColour);
+    g.fillRoundedRectangle(panelX, filterY, filterPanelW, filterPanelH, panelCornerRadius);
+    g.setColour(panelTitleColour);
+    g.setFont(panelFontSize);
+    g.drawText("Filter", panelX, filterY + leftPanelTitleYOffset, filterPanelW - leftPanelTitleWidthOffset, leftPanelTitleHeight, juce::Justification::centred);
+
+    // Envelope panel
+    g.setColour(leftPanelColour);
+    g.fillRoundedRectangle(panelX, envY, envPanelW, envPanelH, panelCornerRadius);
+    g.setColour(panelTitleColour);
+    g.setFont(panelFontSize);
+    g.drawText("Envelope", panelX, envY + leftPanelTitleYOffset, envPanelW - leftPanelTitleWidthOffset, leftPanelTitleHeight, juce::Justification::centred);
 
     // Keyboard panel background
+    g.setColour(juce::Colour(0xff2a2a2a));
     g.fillRoundedRectangle(20, 590, getWidth() - 40, 100, 10);
 }
 
 void VizASynthAudioProcessorEditor::resized()
 {
+    struct Layout {
+        int margin = 5;
+        int panelSpacing = 22;
+        int panelInnerMargin = 18;
+        
+        // Left panel
+        int leftPanelWidth = 370;
+        int oscPanelH = 80;
+        int filterPanelH = 150;
+        int envPanelH = 230;
+        int oscPanelW = 320;
+        int filterPanelW = 320;
+        int envPanelW = 320;
+        int labelHeight = 22;
+        int comboHeight = 32;
+        int filterKnobSize = 80;
+        int filterKnobSpacing = 80;
+        int filterKnobYOffset = 2;
+        int envKnobSize = 80;
+        int envKnobSpacing = 2;
+        int envelopeVisHeight = 100;
+        int bottomAreaHeight = 110;
+        int volumeSectionWidth = 100;
+        int meterWidth = 20;
+        int masterVolumeLabelHeight = 18;
+        int oscTitleOffsetX = 30;
+        int oscComboOffsetX = 30;
+        int filterKnob1X = 80;
+        int filterKnob2X = 200;
+        int envKnobStartX = 28;
+        int envKnobYOffset = 2;
+        int filterLabelYOffset = 38;
+        int envVisYOffset = 38;
+        int envVisXOffset = 22;
+        // Visualization controls
+        int vizControlAreaHPad = 5;
+        int vizControlAreaVPad = 10;
+        int vizControlAreaBottomPad = 60;
+        int vizControlAreaHeight = 50;
+        int vizControlScopeWidth = 60;
+        int vizControlScopeSpacing = 2;
+        int vizControlSpectrumWidth = 70;
+        int vizControlSectionSpacing = 12;
+        int vizControlProbeWidth = 45;
+        int vizControlProbeSpacing = 4;
+        int vizControlFreezeWidth = 55;
+        int vizControlClearWidth = 50;
+        int vizControlLabelWidth = 35;
+    } layout;
+    
     auto bounds = getLocalBounds();
 
     // Bottom area for keyboard and volume controls
-    auto bottomArea = bounds.removeFromBottom(110).reduced(25, 5);
-
-    // Master volume and level meter on the right
-    auto volumeSection = bottomArea.removeFromRight(100);
+    auto bottomArea = bounds.removeFromBottom(layout.bottomAreaHeight).reduced(25, 5);
+    auto volumeSection = bottomArea.removeFromRight(layout.volumeSectionWidth);
     volumeSection = volumeSection.reduced(5, 0);
-
-    masterVolumeLabel.setBounds(volumeSection.removeFromTop(18));
-
+    masterVolumeLabel.setBounds(volumeSection.removeFromTop(layout.masterVolumeLabelHeight));
     auto sliderAndMeter = volumeSection;
-    auto meterArea = sliderAndMeter.removeFromRight(20);
+    auto meterArea = sliderAndMeter.removeFromRight(layout.meterWidth);
     levelMeter.setBounds(meterArea.reduced(0, 2));
-
     masterVolumeSlider.setBounds(sliderAndMeter);
-
-    // Virtual keyboard fills the rest
     virtualKeyboard.setBounds(bottomArea.reduced(0, 5));
 
-    // Control panel area (left side)
-    auto controlArea = bounds.removeFromLeft(370).reduced(30, 70);
+    // --- Split main area into left (panels) and right (visualization) ---
+    auto mainArea = bounds.reduced(layout.margin, layout.margin);
+    auto leftPanelArea = mainArea.removeFromLeft(layout.leftPanelWidth);
+    auto rightVizArea = mainArea;
 
-    // Visualization area (right side)
-    auto vizArea = bounds.reduced(10, 60);
+    // --- Control panel area (left side) ---
+    int panelX = leftPanelArea.getX();
+    int oscY = leftPanelArea.getY() + 70;
+    int filterY = oscY + layout.oscPanelH + layout.panelSpacing;
+    int envY = filterY + layout.filterPanelH + layout.panelSpacing;
 
-    // Visualization area (minus control bar at bottom)
-    auto scopeArea = vizArea.removeFromTop(vizArea.getHeight() - 50);
+    // Oscillator section (centered vertically in osc panel)
+    int oscComboY = oscY + 40;
+    oscTypeLabel.setBounds(panelX + layout.panelInnerMargin + layout.oscComboOffsetX, oscComboY, 100, layout.labelHeight);
+    oscTypeCombo.setBounds(panelX + 120 + layout.oscComboOffsetX, oscComboY - 2, 170, layout.comboHeight);
 
-    // In Oscilloscope mode: stack oscilloscope and single-cycle view
-    // In Spectrum mode: show only spectrum analyzer
+    // Filter section (centered vertically in filter panel)
+    int filterLabelY = filterY + layout.filterLabelYOffset;
+    int filterKnobY = filterLabelY + layout.labelHeight + layout.filterKnobYOffset;
+    cutoffLabel.setBounds(panelX + layout.filterKnob1X, filterLabelY, layout.filterKnobSize, layout.labelHeight);
+    cutoffSlider.setBounds(panelX + layout.filterKnob1X, filterKnobY, layout.filterKnobSize, layout.filterKnobSize);
+    resonanceLabel.setBounds(panelX + layout.filterKnob2X, filterLabelY, layout.filterKnobSize, layout.labelHeight);
+    resonanceSlider.setBounds(panelX + layout.filterKnob2X, filterKnobY, layout.filterKnobSize, layout.filterKnobSize);
+
+    // Envelope section
+    int envVisY = envY + layout.envVisYOffset;
+    envelopeVisualizer.setBounds(panelX + layout.panelInnerMargin + layout.envVisXOffset, envVisY, layout.envPanelW - 2 * layout.panelInnerMargin, layout.envelopeVisHeight);
+    int envKnobY = envVisY + layout.envelopeVisHeight + layout.envKnobYOffset;
+    for (int i = 0; i < 4; ++i) {
+        int knobX = panelX + layout.envKnobStartX + i * (layout.envKnobSize + layout.envKnobSpacing);
+        switch (i) {
+            case 0:
+                attackSlider.setBounds(knobX, envKnobY, layout.envKnobSize, layout.envKnobSize);
+                attackLabel.setBounds(knobX, envKnobY + layout.envKnobSize, layout.envKnobSize, 20);
+                break;
+            case 1:
+                decaySlider.setBounds(knobX, envKnobY, layout.envKnobSize, layout.envKnobSize);
+                decayLabel.setBounds(knobX, envKnobY + layout.envKnobSize, layout.envKnobSize, 20);
+                break;
+            case 2:
+                sustainSlider.setBounds(knobX, envKnobY, layout.envKnobSize, layout.envKnobSize);
+                sustainLabel.setBounds(knobX, envKnobY + layout.envKnobSize, layout.envKnobSize, 20);
+                break;
+            case 3:
+                releaseSlider.setBounds(knobX, envKnobY, layout.envKnobSize, layout.envKnobSize);
+                releaseLabel.setBounds(knobX, envKnobY + layout.envKnobSize, layout.envKnobSize, 20);
+                break;
+        }
+    }
+
+    // --- Visualization area (right side) ---
+    auto vizArea = rightVizArea.reduced(layout.margin, layout.vizControlAreaBottomPad);
+    auto scopeArea = vizArea.removeFromTop(vizArea.getHeight() - layout.vizControlAreaHeight);
     if (currentVizMode == VisualizationMode::Oscilloscope)
     {
         auto topHalf = scopeArea.removeFromTop(scopeArea.getHeight() / 2);
@@ -296,72 +423,23 @@ void VizASynthAudioProcessorEditor::resized()
     }
 
     // Controls below visualization
-    auto vizControlArea = vizArea.reduced(5, 10);
-
-    // Visualization mode selector (Scope / Spectrum)
-    scopeButton.setBounds(vizControlArea.removeFromLeft(60));
-    vizControlArea.removeFromLeft(2);
-    spectrumButton.setBounds(vizControlArea.removeFromLeft(70));
-
-    vizControlArea.removeFromLeft(12);
-
-    // Probe buttons
-    probeOscButton.setBounds(vizControlArea.removeFromLeft(45));
-    vizControlArea.removeFromLeft(4);
-    probeFilterButton.setBounds(vizControlArea.removeFromLeft(45));
-    vizControlArea.removeFromLeft(4);
-    probeOutputButton.setBounds(vizControlArea.removeFromLeft(45));
-
-    vizControlArea.removeFromLeft(12);
-
-    // Freeze button
-    freezeButton.setBounds(vizControlArea.removeFromLeft(55));
-    vizControlArea.removeFromLeft(4);
-
-    // Clear trace button
-    clearTraceButton.setBounds(vizControlArea.removeFromLeft(50));
-
-    vizControlArea.removeFromLeft(12);
-
-    // Time window control (only relevant for oscilloscope, but always visible)
-    timeWindowLabel.setBounds(vizControlArea.removeFromLeft(35));
+    auto vizControlArea = vizArea.reduced(layout.vizControlAreaHPad, layout.vizControlAreaVPad);
+    scopeButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlScopeWidth));
+    vizControlArea.removeFromLeft(layout.vizControlScopeSpacing);
+    spectrumButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlSpectrumWidth));
+    vizControlArea.removeFromLeft(layout.vizControlSectionSpacing);
+    probeOscButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlProbeWidth));
+    vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
+    probeFilterButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlProbeWidth));
+    vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
+    probeOutputButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlProbeWidth));
+    vizControlArea.removeFromLeft(layout.vizControlSectionSpacing);
+    freezeButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlFreezeWidth));
+    vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
+    clearTraceButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlClearWidth));
+    vizControlArea.removeFromLeft(layout.vizControlSectionSpacing);
+    timeWindowLabel.setBounds(vizControlArea.removeFromLeft(layout.vizControlLabelWidth));
     timeWindowSlider.setBounds(vizControlArea);
-
-    // Oscillator section
-    auto oscArea = controlArea.removeFromTop(80);
-    oscTypeLabel.setBounds(oscArea.removeFromLeft(100));
-    oscTypeCombo.setBounds(oscArea.reduced(10, 20));
-
-    controlArea.removeFromTop(20); // Spacer
-
-    // Filter section
-    auto filterArea = controlArea.removeFromTop(120);
-    auto cutoffArea = filterArea.removeFromLeft(filterArea.getWidth() / 2);
-    cutoffLabel.setBounds(cutoffArea.removeFromTop(20));
-    cutoffSlider.setBounds(cutoffArea);
-
-    resonanceLabel.setBounds(filterArea.removeFromTop(20));
-    resonanceSlider.setBounds(filterArea);
-
-    controlArea.removeFromTop(20); // Spacer
-
-    // ADSR section
-    auto adsrArea = controlArea.removeFromTop(200);
-
-    auto attackArea = adsrArea.removeFromLeft(adsrArea.getWidth() / 4);
-    attackLabel.setBounds(attackArea.removeFromBottom(20));
-    attackSlider.setBounds(attackArea);
-
-    auto decayArea = adsrArea.removeFromLeft(adsrArea.getWidth() / 3);
-    decayLabel.setBounds(decayArea.removeFromBottom(20));
-    decaySlider.setBounds(decayArea);
-
-    auto sustainArea = adsrArea.removeFromLeft(adsrArea.getWidth() / 2);
-    sustainLabel.setBounds(sustainArea.removeFromBottom(20));
-    sustainSlider.setBounds(sustainArea);
-
-    releaseLabel.setBounds(adsrArea.removeFromBottom(20));
-    releaseSlider.setBounds(adsrArea);
 }
 
 void VizASynthAudioProcessorEditor::timerCallback()
@@ -378,6 +456,20 @@ void VizASynthAudioProcessorEditor::timerCallback()
         case 2: singleCycleView.setWaveformType(vizasynth::OscillatorWaveform::Square); break;
         default: singleCycleView.setWaveformType(vizasynth::OscillatorWaveform::Sine); break;
     }
+
+    // Track note changes for envelope visualization (handles external MIDI)
+    int currentNoteCount = static_cast<int>(audioProcessor.getActiveNotes().size());
+    if (currentNoteCount > lastActiveNoteCount)
+    {
+        // New note triggered
+        envelopeVisualizer.triggerEnvelope();
+    }
+    else if (currentNoteCount < lastActiveNoteCount && currentNoteCount == 0)
+    {
+        // All notes released
+        envelopeVisualizer.releaseEnvelope();
+    }
+    lastActiveNoteCount = currentNoteCount;
 }
 
 void VizASynthAudioProcessorEditor::changeListenerCallback(juce::ChangeBroadcaster* source)
