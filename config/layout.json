@@ -39,7 +39,7 @@
       "titleFontSize": 20.0,
       "titleYOffset": 6,
       "titleHeight": 28,
-      "titleWidthOffset": 30
+      "titleWidthOffset": 0
     },
     "leftPanel": {
       "width": 370
@@ -71,9 +71,9 @@
     },
     "envelopePanel": {
       "width": 320,
-      "height": 230,
+      "height": 260,
       "knobSize": 80,
-      "knobSpacing": 2,
+      "knobSpacing": 0,
       "knobStartX": 28,
       "knobYOffset": 2,
       "visHeight": 100,
@@ -96,21 +96,17 @@
       "textBoxHeight": 20
     },
     "keyboardPanel": {
-      "x": 20,
-      "y": 590,
-      "marginH": 40,
-      "height": 100,
       "cornerRadius": 10,
       "paddingV": 5
     },
     "vizControls": {
-      "areaHeight": 50,
-      "hPad": 5,
-      "vPad": 10,
-      "bottomPad": 60,
-      "buttonSpacing": 2,
-      "sectionSpacing": 12,
-      "probeSpacing": 4
+      "areaHeight": 40,
+      "hPad": 10,
+      "vPad": 5,
+      "bottomPad": 10,
+      "buttonSpacing": 5,
+      "sectionSpacing": 15,
+      "probeSpacing": 5
     },
     "buttons": {
       "scope": {

@@ -245,17 +245,7 @@ void EnvelopeVisualizer::drawEnvelopeCurve(juce::Graphics& g, juce::Rectangle<fl
     g.strokePath(releasePath, juce::PathStrokeType(2.5f));
     envelopePath.lineTo(releaseEndX, bounds.getBottom());
 
-    // Fill under curve with gradient
-    envelopePath.lineTo(startX, startY);
-    envelopePath.closeSubPath();
-
-    auto& config = ConfigurationManager::getInstance();
-    juce::ColourGradient fillGradient(
-        config.getThemeColour("colors.envelope.fill", juce::Colour(0x40ffffff)), bounds.getX(), bounds.getY(),
-        config.getThemeColour("colors.envelope.fillBottom", juce::Colour(0x10ffffff)), bounds.getX(), bounds.getBottom(),
-        false);
-    g.setGradientFill(fillGradient);
-    g.fillPath(envelopePath);
+    // No fill under curve - just the line segments
 }
 
 void EnvelopeVisualizer::drawPlayhead(juce::Graphics& g, juce::Rectangle<float> bounds)

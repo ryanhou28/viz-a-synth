@@ -290,13 +290,17 @@ void VizASynthAudioProcessorEditor::paint(juce::Graphics& g)
     g.setFont(panelFontSize);
     g.drawText("Envelope", panelX, envY + leftPanelTitleYOffset, envPanelW - leftPanelTitleWidthOffset, leftPanelTitleHeight, juce::Justification::centred);
 
-    // Keyboard panel background
-    int kbX = config.getLayoutInt("components.keyboardPanel.x", 20);
-    int kbMarginH = config.getLayoutInt("components.keyboardPanel.marginH", 40);
-    int kbHeight = config.getLayoutInt("components.keyboardPanel.height", 100);
+    // Keyboard panel background - calculate position to match the actual keyboard bounds
+    int bottomAreaHeight = config.getLayoutInt("components.bottomArea.height", 110);
+    int bottomPaddingH = config.getLayoutInt("components.bottomArea.paddingH", 25);
+    int bottomPaddingV = config.getLayoutInt("components.bottomArea.paddingV", 5);
+    int kbPanelX = bottomPaddingH;
+    int kbPanelY = getHeight() - bottomAreaHeight + bottomPaddingV;
+    int kbPanelWidth = getWidth() - 2 * bottomPaddingH;
+    int kbPanelHeight = bottomAreaHeight - 2 * bottomPaddingV;
     float kbCornerRadius = config.getLayoutFloat("components.keyboardPanel.cornerRadius", 10.0f);
     g.setColour(config.getThemeColour("colors.keyboard.panelBackground", juce::Colour(0xff2a2a2a)));
-    g.fillRoundedRectangle(static_cast<float>(kbX), 590.0f, static_cast<float>(getWidth() - kbMarginH), static_cast<float>(kbHeight), kbCornerRadius);
+    g.fillRoundedRectangle(static_cast<float>(kbPanelX), static_cast<float>(kbPanelY), static_cast<float>(kbPanelWidth), static_cast<float>(kbPanelHeight), kbCornerRadius);
 }
 
 void VizASynthAudioProcessorEditor::resized()

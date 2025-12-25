@@ -35,10 +35,10 @@
       "textActive": "#ffffff"
     },
     "sliders": {
-      "thumb": "#4CAF50",
-      "thumbHover": "#5DBC61",
+      "thumb": "#5c9fd4",
+      "thumbHover": "#7ab3e0",
       "track": "#2d2d44",
-      "rotaryFill": "#4CAF50",
+      "rotaryFill": "#5c9fd4",
       "rotaryOutline": "#2d2d44",
       "textBox": "#1a1a2e",
       "textBoxText": "#e0e0e0",
@@ -51,9 +51,7 @@
       "decay": "#ffc107",
       "sustain": "#2196f3",
       "release": "#f44336",
-      "playhead": "#ffffff",
-      "fill": "#40ffffff",
-      "fillBottom": "#10ffffff"
+      "playhead": "#ffffff"
     },
     "keyboard": {
       "background": "#1a1a1a",
