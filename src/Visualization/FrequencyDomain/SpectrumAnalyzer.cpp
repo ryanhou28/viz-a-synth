@@ -212,6 +212,10 @@ void SpectrumAnalyzer::mouseDown(const juce::MouseEvent& event)
 //==============================================================================
 void SpectrumAnalyzer::timerCallback()
 {
+    // Don't process if not visible - prevents stealing data from other visualizers
+    if (!isVisible())
+        return;
+
     sampleRate = static_cast<float>(probeManager.getSampleRate());
 
     if (frozen) {
