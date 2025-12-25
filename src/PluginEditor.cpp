@@ -7,7 +7,13 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
       audioProcessor(p),
       oscilloscope(p.getProbeManager()),
       spectrumAnalyzer(p.getProbeManager()),
-      harmonicView(p.getProbeManager()),
+      harmonicView(p.getProbeManager(),
+                   [&]() -> vizasynth::PolyBLEPOscillator& {
+                       if (auto* voice = p.getVoice(0)) {
+                           return voice->getOscillator();
+                       }
+                       throw std::runtime_error("No voices available to provide an oscillator.");
+                   }()),
       singleCycleView(p.getProbeManager(),
                       [&]() -> vizasynth::PolyBLEPOscillator& {
                           if (auto* voice = p.getVoice(0)) {
@@ -543,10 +549,10 @@ void VizASynthAudioProcessorEditor::timerCallback()
     int oscType = static_cast<int>(audioProcessor.getAPVTS().getRawParameterValue("oscType")->load());
     switch (oscType)
     {
-        case 0: singleCycleView.setWaveformType(vizasynth::OscillatorWaveform::Sine); break;
-        case 1: singleCycleView.setWaveformType(vizasynth::OscillatorWaveform::Saw); break;
-        case 2: singleCycleView.setWaveformType(vizasynth::OscillatorWaveform::Square); break;
-        default: singleCycleView.setWaveformType(vizasynth::OscillatorWaveform::Sine); break;
+        case 0: singleCycleView.setWaveformType(vizasynth::OscillatorSource::Waveform::Sine); break;
+        case 1: singleCycleView.setWaveformType(vizasynth::OscillatorSource::Waveform::Saw); break;
+        case 2: singleCycleView.setWaveformType(vizasynth::OscillatorSource::Waveform::Square); break;
+        default: singleCycleView.setWaveformType(vizasynth::OscillatorSource::Waveform::Sine); break;
     }
 
     // Track note changes for envelope visualization (handles external MIDI)

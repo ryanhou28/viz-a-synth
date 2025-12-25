@@ -4,11 +4,15 @@
 #include "../ProbeBuffer.h"
 #include "../../Core/FrequencyValue.h"
 #include "../../Core/Types.h"
+#include "../../DSP/Oscillators/OscillatorSource.h"
 #include <juce_dsp/juce_dsp.h>
 #include <vector>
 #include <array>
 
 namespace vizasynth {
+
+// Forward declaration
+class PolyBLEPOscillator;
 
 /**
  * Harmonic View visualization panel.
@@ -20,6 +24,7 @@ namespace vizasynth {
  * Features:
  * - Fixed bar positions for harmonics 1-N (always visible as gray outlines)
  * - Colored fill showing actual measured magnitude with smoothing
+ * - Theoretical harmonic overlay based on waveform type
  * - Uses known fundamental frequency from ProbeManager when available
  * - Odd/even harmonic color coding
  */
@@ -29,7 +34,11 @@ public:
     static constexpr int FFTSize = 1 << FFTOrder;
     static constexpr int MaxHarmonics = 16;  // Display up to 16 harmonics
 
-    explicit HarmonicView(ProbeManager& probeManager);
+    /**
+     * Constructor with oscillator reference for theoretical harmonic display.
+     */
+    HarmonicView(ProbeManager& probeManager, PolyBLEPOscillator& oscillator);
+
     ~HarmonicView() override = default;
 
     //=========================================================================
@@ -73,6 +82,16 @@ public:
      * Get current smoothing factor.
      */
     float getSmoothingFactor() const { return smoothingFactor; }
+
+    /**
+     * Enable/disable theoretical harmonic overlay.
+     */
+    void setShowTheoretical(bool show) { showTheoreticalHarmonics = show; }
+
+    /**
+     * Check if theoretical harmonics are shown.
+     */
+    bool getShowTheoretical() const { return showTheoreticalHarmonics; }
 
     /**
      * Get the current fundamental frequency.
@@ -120,20 +139,36 @@ private:
     void extractHarmonics(float fundamental);
 
     /**
+     * Update theoretical harmonics from oscillator.
+     */
+    void updateTheoreticalHarmonics();
+
+    /**
      * Draw the fixed bar placeholder (dashed outline).
      */
     void drawBarPlaceholder(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
-     * Draw a single harmonic bar fill.
+     * Draw a single harmonic bar fill (measured).
      */
     void drawHarmonicBar(juce::Graphics& g, juce::Rectangle<float> bounds,
                           int harmonicNum, float magnitudeDB, bool isOdd);
 
     /**
+     * Draw theoretical harmonic marker.
+     */
+    void drawTheoreticalMarker(juce::Graphics& g, juce::Rectangle<float> bounds,
+                                float theoreticalDB);
+
+    /**
      * Draw voice mode toggle buttons.
      */
     void drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Draw theoretical toggle button.
+     */
+    void drawTheoreticalToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
      * Get the appropriate probe buffer based on voice mode.
@@ -151,6 +186,7 @@ private:
     static float frequencyToCentsDeviation(float frequency);
 
     ProbeManager& probeManager;
+    PolyBLEPOscillator& oscillator;
 
     // FFT
     juce::dsp::FFT fft{FFTOrder};
@@ -167,17 +203,26 @@ private:
     // Harmonic magnitudes (smoothed, fixed array for N harmonics)
     std::array<float, MaxHarmonics> harmonicMagnitudes{};      // Current smoothed values in dB
     std::array<float, MaxHarmonics> frozenMagnitudes{};        // Frozen values in dB
+    std::array<float, MaxHarmonics> theoreticalMagnitudes{};   // Theoretical values in dB (relative)
     float fundamentalFrequency = 0.0f;
     float smoothedFundamental = 0.0f;
     float frozenFundamental = 0.0f;
 
+    // Cached waveform info
+    OscillatorSource::Waveform currentWaveform = OscillatorSource::Waveform::Sine;
+    std::string waveformName;
+    std::string harmonicDescription;
+
     // Settings
     int numHarmonicsToShow = 10;
     float smoothingFactor = 0.85f;  // Higher = more smoothing
+    bool showTheoreticalHarmonics = true;  // Show theoretical overlay by default
+    bool theoreticalInitialized = false;   // Deferred initialization flag
 
-    // Voice mode toggle button bounds (for hit testing)
+    // Button bounds for hit testing
     juce::Rectangle<float> mixButtonBounds;
     juce::Rectangle<float> voiceButtonBounds;
+    juce::Rectangle<float> theoreticalButtonBounds;
 
     // Display range
     static constexpr float MinDB = -60.0f;

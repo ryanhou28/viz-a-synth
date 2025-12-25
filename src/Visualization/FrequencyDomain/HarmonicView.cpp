@@ -1,18 +1,23 @@
 #include "HarmonicView.h"
+#include "../../DSP/Oscillators/PolyBLEPOscillator.h"
 #include <cmath>
 
 namespace vizasynth {
 
 //==============================================================================
-HarmonicView::HarmonicView(ProbeManager& pm)
-    : probeManager(pm)
+HarmonicView::HarmonicView(ProbeManager& pm, PolyBLEPOscillator& osc)
+    : probeManager(pm), oscillator(osc)
 {
     inputBuffer.reserve(FFTSize * 2);
     magnitudeSpectrum.fill(MinDB);
     harmonicMagnitudes.fill(MinDB);
     frozenMagnitudes.fill(MinDB);
+    theoreticalMagnitudes.fill(MinDB);
 
     sampleRate = static_cast<float>(probeManager.getSampleRate());
+
+    // Note: Don't call updateTheoreticalHarmonics() here - the oscillator's
+    // virtual table may not be ready. It will be called on first timer tick.
 }
 
 //==============================================================================
@@ -42,6 +47,37 @@ juce::Colour HarmonicView::getProbeColour(ProbePoint probe)
         case ProbePoint::Mix:          return juce::Colour(0xffffffff);  // White
     }
     return juce::Colours::white;
+}
+
+//==============================================================================
+void HarmonicView::updateTheoreticalHarmonics()
+{
+    currentWaveform = oscillator.getWaveform();
+    waveformName = OscillatorSource::waveformToString(currentWaveform);
+    harmonicDescription = oscillator.getHarmonicDescription();
+
+    // Get theoretical harmonics from oscillator
+    auto theoretical = oscillator.getTheoreticalHarmonics(MaxHarmonics);
+
+    // Convert to dB relative to fundamental
+    // Find the fundamental magnitude for normalization
+    float fundamentalMag = 0.0f;
+    for (const auto& h : theoretical) {
+        if (h.harmonicNumber == 1) {
+            fundamentalMag = h.magnitude;
+            break;
+        }
+    }
+
+    // Fill theoretical magnitudes array
+    theoreticalMagnitudes.fill(MinDB);
+    for (const auto& h : theoretical) {
+        if (h.harmonicNumber >= 1 && h.harmonicNumber <= MaxHarmonics) {
+            float relativeMag = (fundamentalMag > 0.0f) ? h.magnitude / fundamentalMag : h.magnitude;
+            float dB = (relativeMag > 0.0f) ? 20.0f * std::log10(relativeMag) : MinDB;
+            theoreticalMagnitudes[static_cast<size_t>(h.harmonicNumber - 1)] = juce::jlimit(MinDB, MaxDB, dB);
+        }
+    }
 }
 
 //==============================================================================
@@ -85,7 +121,7 @@ void HarmonicView::renderVisualization(juce::Graphics& g)
     float totalBarsWidth = numBars * barWidth + (numBars - 1) * barSpacing;
     float startX = bounds.getX() + (bounds.getWidth() - totalBarsWidth) / 2.0f;
 
-    // Draw all bars (placeholders first, then fills)
+    // Draw all bars (placeholders first, then fills, then theoretical markers)
     for (int i = 0; i < numBars; ++i) {
         int harmonicNum = i + 1;
         bool isOdd = (harmonicNum % 2) == 1;
@@ -96,7 +132,15 @@ void HarmonicView::renderVisualization(juce::Graphics& g)
         // Draw dashed placeholder outline
         drawBarPlaceholder(g, barBounds);
 
-        // Draw filled bar if we have signal
+        // Draw theoretical marker if enabled
+        if (showTheoreticalHarmonics) {
+            float theoreticalDB = theoreticalMagnitudes[static_cast<size_t>(i)];
+            if (theoreticalDB > MinDB + 3.0f) {
+                drawTheoreticalMarker(g, barBounds, theoreticalDB);
+            }
+        }
+
+        // Draw filled bar if we have signal (measured)
         float magDB = displayMagnitudes[static_cast<size_t>(i)];
         if (magDB > MinDB + 3.0f) {  // Only draw if above noise floor
             drawHarmonicBar(g, barBounds, harmonicNum, magDB, isOdd);
@@ -150,6 +194,41 @@ void HarmonicView::drawBarPlaceholder(juce::Graphics& g, juce::Rectangle<float> 
         g.drawHorizontalLine(static_cast<int>(bounds.getBottom() - 1), x, endX);
         x += dashLength + gapLength;
     }
+}
+
+void HarmonicView::drawTheoreticalMarker(juce::Graphics& g, juce::Rectangle<float> bounds,
+                                          float theoreticalDB)
+{
+    // Draw a horizontal line showing where the theoretical harmonic should be
+    float clampedDB = juce::jlimit(MinDB, MaxDB, theoreticalDB);
+    float normalizedHeight = (clampedDB - MinDB) / (MaxDB - MinDB);
+    float markerY = bounds.getBottom() - normalizedHeight * bounds.getHeight();
+
+    // Draw dashed horizontal line across the bar width
+    g.setColour(juce::Colour(0xffffff00).withAlpha(0.7f));  // Yellow for theoretical
+
+    const float dashLength = 3.0f;
+    const float gapLength = 2.0f;
+    float x = bounds.getX() + 2;
+    while (x < bounds.getRight() - 2) {
+        float endX = std::min(x + dashLength, bounds.getRight() - 2);
+        g.drawHorizontalLine(static_cast<int>(markerY), x, endX);
+        x += dashLength + gapLength;
+    }
+
+    // Draw small triangular markers on the sides
+    float markerSize = 4.0f;
+    juce::Path leftMarker;
+    leftMarker.addTriangle(bounds.getX() - markerSize, markerY,
+                           bounds.getX(), markerY - markerSize / 2,
+                           bounds.getX(), markerY + markerSize / 2);
+    g.fillPath(leftMarker);
+
+    juce::Path rightMarker;
+    rightMarker.addTriangle(bounds.getRight() + markerSize, markerY,
+                            bounds.getRight(), markerY - markerSize / 2,
+                            bounds.getRight(), markerY + markerSize / 2);
+    g.fillPath(rightMarker);
 }
 
 void HarmonicView::drawHarmonicBar(juce::Graphics& g, juce::Rectangle<float> bounds,
@@ -219,10 +298,14 @@ void HarmonicView::renderOverlay(juce::Graphics& g)
                static_cast<int>(fullBounds.getY() + 5), 45, 15,
                juce::Justification::centredRight);
 
-    // Draw "HARMONICS" label
+    // Draw "HARMONICS" label with waveform name
     g.setColour(juce::Colours::grey);
-    g.drawText("HARMONICS", static_cast<int>(fullBounds.getX() + 5),
-               static_cast<int>(fullBounds.getY() + 5), 90, 15, juce::Justification::centredLeft);
+    juce::String headerText = "HARMONICS";
+    if (!waveformName.empty()) {
+        headerText += " (" + juce::String(waveformName) + ")";
+    }
+    g.drawText(headerText, static_cast<int>(fullBounds.getX() + 5),
+               static_cast<int>(fullBounds.getY() + 5), 150, 15, juce::Justification::centredLeft);
 
     // Draw frozen indicator
     if (frozen) {
@@ -271,6 +354,9 @@ void HarmonicView::renderOverlay(juce::Graphics& g)
         }
     }
 
+    // Draw theoretical toggle button
+    drawTheoreticalToggle(g, fullBounds);
+
     // Draw voice mode toggle
     drawVoiceModeToggle(g, fullBounds);
 
@@ -281,6 +367,16 @@ void HarmonicView::renderOverlay(juce::Graphics& g)
     g.drawText(fsText, static_cast<int>(bounds.getX()),
                static_cast<int>(fullBounds.getBottom() - 15),
                static_cast<int>(bounds.getWidth()), 12, juce::Justification::centred);
+
+    // Draw legend for theoretical markers if enabled
+    if (showTheoreticalHarmonics) {
+        g.setColour(juce::Colour(0xffffff00).withAlpha(0.7f));
+        float legendY = fullBounds.getY() + 22;
+        g.drawHorizontalLine(static_cast<int>(legendY), fullBounds.getX() + 5, fullBounds.getX() + 20);
+        g.setFont(9.0f);
+        g.drawText("Theoretical", static_cast<int>(fullBounds.getX() + 22),
+                   static_cast<int>(legendY - 5), 60, 10, juce::Justification::centredLeft);
+    }
 }
 
 void HarmonicView::renderEquations(juce::Graphics& g)
@@ -294,9 +390,29 @@ void HarmonicView::renderEquations(juce::Graphics& g)
     g.setColour(getTextColour());
     g.setFont(11.0f);
 
-    // Show Fourier series equation
-    juce::String equation = "x(t) = \u03A3 A\u2099 sin(n\u03C9\u2080t + \u03C6\u2099)";
+    // Show waveform-specific Fourier series info
+    juce::String equation;
+    if (currentWaveform == OscillatorSource::Waveform::Sine) {
+        equation = "Sine: x(t) = sin(\u03C9\u2080t)";
+    } else if (currentWaveform == OscillatorSource::Waveform::Saw) {
+        equation = "Saw: All harmonics, A\u2099 = 2/(n\u03C0)";
+    } else if (currentWaveform == OscillatorSource::Waveform::Square) {
+        equation = "Square: Odd harmonics, A\u2099 = 4/(n\u03C0)";
+    } else if (currentWaveform == OscillatorSource::Waveform::Triangle) {
+        equation = "Triangle: Odd harmonics, A\u2099 = 8/(n\u00B2\u03C0\u00B2)";
+    }
+
     g.drawText(equation, bounds.reduced(8), juce::Justification::centred);
+
+    // Show harmonic description below
+    if (!harmonicDescription.empty()) {
+        g.setFont(9.0f);
+        g.setColour(getDimTextColour());
+        g.drawText(juce::String(harmonicDescription),
+                   static_cast<int>(bounds.getX() + 8), static_cast<int>(bounds.getBottom() - 18),
+                   static_cast<int>(bounds.getWidth() - 16), 14,
+                   juce::Justification::left);
+    }
 }
 
 void HarmonicView::resized()
@@ -318,6 +434,10 @@ void HarmonicView::mouseDown(const juce::MouseEvent& event)
         inputBuffer.clear();
         repaint();
     }
+    else if (theoreticalButtonBounds.contains(pos)) {
+        showTheoreticalHarmonics = !showTheoreticalHarmonics;
+        repaint();
+    }
 }
 
 //==============================================================================
@@ -329,6 +449,19 @@ void HarmonicView::timerCallback()
     }
 
     sampleRate = static_cast<float>(probeManager.getSampleRate());
+
+    // Deferred initialization of theoretical harmonics (can't be done in constructor
+    // because oscillator's vtable might not be ready)
+    if (!theoreticalInitialized) {
+        updateTheoreticalHarmonics();
+        theoreticalInitialized = true;
+    } else {
+        // Check if waveform changed and update theoretical harmonics
+        auto newWaveform = oscillator.getWaveform();
+        if (newWaveform != currentWaveform) {
+            updateTheoreticalHarmonics();
+        }
+    }
 
     if (frozen) {
         return;
@@ -420,16 +553,15 @@ void HarmonicView::extractHarmonics(float fundamental)
 
     float binWidth = sampleRate / static_cast<float>(FFTSize);
 
-    // Extract each harmonic
+    // First pass: extract raw magnitudes for all harmonics (in dB from spectrum)
+    std::array<float, MaxHarmonics> rawMagnitudesDB{};
+    rawMagnitudesDB.fill(MinDB);
+
     for (int n = 1; n <= MaxHarmonics; ++n) {
         float harmonicFreq = fundamental * static_cast<float>(n);
 
-        // Stop if we exceed Nyquist
+        // Skip if we exceed Nyquist
         if (harmonicFreq > sampleRate / 2.0f) {
-            // Decay harmonics above Nyquist
-            harmonicMagnitudes[static_cast<size_t>(n - 1)] =
-                smoothingFactor * harmonicMagnitudes[static_cast<size_t>(n - 1)] +
-                (1.0f - smoothingFactor) * MinDB;
             continue;
         }
 
@@ -437,9 +569,6 @@ void HarmonicView::extractHarmonics(float fundamental)
         int centerBin = static_cast<int>(harmonicFreq / binWidth + 0.5f);
 
         if (centerBin < 1 || centerBin >= FFTSize / 2) {
-            harmonicMagnitudes[static_cast<size_t>(n - 1)] =
-                smoothingFactor * harmonicMagnitudes[static_cast<size_t>(n - 1)] +
-                (1.0f - smoothingFactor) * MinDB;
             continue;
         }
 
@@ -456,10 +585,38 @@ void HarmonicView::extractHarmonics(float fundamental)
             }
         }
 
-        // Apply smoothing to the harmonic magnitude
+        rawMagnitudesDB[static_cast<size_t>(n - 1)] = bestMagnitude;
+    }
+
+    // Get the fundamental magnitude for normalization
+    float fundamentalDB = rawMagnitudesDB[0];
+
+    // Second pass: normalize relative to fundamental and apply smoothing
+    for (int n = 1; n <= MaxHarmonics; ++n) {
+        float harmonicFreq = fundamental * static_cast<float>(n);
+        float targetDB;
+
+        if (harmonicFreq > sampleRate / 2.0f) {
+            // Above Nyquist - decay to minimum
+            targetDB = MinDB;
+        } else {
+            // Normalize: subtract fundamental dB to get relative dB
+            // This makes fundamental = 0 dB, harmonics relative to it
+            float rawDB = rawMagnitudesDB[static_cast<size_t>(n - 1)];
+            if (fundamentalDB > MinDB + 10.0f) {
+                // Only normalize if we have a valid fundamental
+                targetDB = rawDB - fundamentalDB;
+            } else {
+                // No valid fundamental - show absolute values
+                targetDB = rawDB;
+            }
+            targetDB = juce::jlimit(MinDB, MaxDB, targetDB);
+        }
+
+        // Apply smoothing
         harmonicMagnitudes[static_cast<size_t>(n - 1)] =
             smoothingFactor * harmonicMagnitudes[static_cast<size_t>(n - 1)] +
-            (1.0f - smoothingFactor) * bestMagnitude;
+            (1.0f - smoothingFactor) * targetDB;
     }
 }
 
@@ -471,6 +628,26 @@ ProbeBuffer& HarmonicView::getActiveBuffer()
         return probeManager.getMixProbeBuffer();
     }
     return probeManager.getProbeBuffer();
+}
+
+void HarmonicView::drawTheoreticalToggle(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    float buttonWidth = 70.0f;
+    float buttonHeight = 18.0f;
+    float padding = 8.0f;
+
+    // Position to the left of the voice mode toggle
+    float startX = bounds.getRight() - (35.0f * 2 + 2.0f + padding) - buttonWidth - 8.0f;
+    float startY = bounds.getBottom() - buttonHeight - padding;
+
+    theoreticalButtonBounds = juce::Rectangle<float>(startX, startY, buttonWidth, buttonHeight);
+
+    g.setColour(showTheoreticalHarmonics ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff2a2a2a));
+    g.fillRoundedRectangle(theoreticalButtonBounds, 3.0f);
+
+    g.setColour(showTheoreticalHarmonics ? juce::Colour(0xffffff00).withAlpha(0.9f) : juce::Colours::grey);
+    g.setFont(10.0f);
+    g.drawText("Theoretical", theoreticalButtonBounds, juce::Justification::centred);
 }
 
 void HarmonicView::drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<float> bounds)

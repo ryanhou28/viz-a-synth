@@ -123,7 +123,7 @@ void VizASynthVoice::prepareToPlay(double sampleRate, int samplesPerBlock)
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = 1;
 
-    oscillator.prepare(sampleRate);
+    oscillator.prepare(sampleRate, samplesPerBlock);
     filter.prepare(spec);
     filter.reset();
 

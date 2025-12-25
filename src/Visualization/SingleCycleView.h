@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "ProbeBuffer.h"
-#include "DSP/PolyBLEPOscillator.h"
+#include "../DSP/Oscillators/PolyBLEPOscillator.h"
 #include <vector>
 
 namespace vizasynth {
