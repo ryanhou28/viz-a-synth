@@ -84,12 +84,6 @@ private:
     int findTriggerPoint(const std::vector<float>& samples) const;
 
     /**
-     * Detect fundamental frequency from waveform using zero-crossing analysis.
-     * Returns 0 if no valid frequency detected.
-     */
-    float detectFundamentalFrequency(const std::vector<float>& samples) const;
-
-    /**
      * Amplitude measurements for the waveform.
      */
     struct AmplitudeMeasurements {

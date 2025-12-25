@@ -139,9 +139,16 @@ void Oscilloscope::renderOverlay(juce::Graphics& g)
                    juce::Justification::centred);
     }
 
-    // Draw detected frequency with dual display (Hz and normalized)
-    const auto& samples = frozen ? frozenBuffer : displayBuffer;
-    float detectedFreq = detectFundamentalFrequency(samples);
+    // Get frequency directly from ProbeManager (set by the oscillator)
+    // This is much more stable than trying to detect it from the waveform
+    float detectedFreq;
+    if (probeManager.getVoiceMode() == VoiceMode::Mix) {
+        // For mix mode, use the lowest active frequency (bass note)
+        detectedFreq = probeManager.getLowestActiveFrequency();
+    } else {
+        // For single voice mode, use the active voice's frequency
+        detectedFreq = probeManager.getActiveFrequency();
+    }
 
     // Get overlay positions from config
     float freqInfoY = config.getLayoutFloat("components.oscilloscope.overlay.frequencyInfo.y", 5.0f);
@@ -344,56 +351,6 @@ Oscilloscope::AmplitudeMeasurements Oscilloscope::calculateAmplitude(const std::
     result.valid = result.peakToPeak > MinAmplitudeThreshold;
 
     return result;
-}
-
-float Oscilloscope::detectFundamentalFrequency(const std::vector<float>& samples) const
-{
-    if (samples.size() < 10)
-        return 0.0f;
-
-    auto& config = ConfigurationManager::getInstance();
-    float hysteresis = config.getLayoutFloat("components.oscilloscope.triggerHysteresis", TriggerHysteresis);
-
-    // Find rising zero crossings and measure the period between them
-    std::vector<size_t> crossings;
-
-    for (size_t i = 1; i < samples.size(); ++i) {
-        float prev = samples[i - 1];
-        float curr = samples[i];
-
-        // Rising zero crossing with hysteresis
-        if (prev < -hysteresis && curr >= hysteresis) {
-            crossings.push_back(i);
-        }
-    }
-
-    // Need at least 2 crossings to measure a period
-    if (crossings.size() < 2)
-        return 0.0f;
-
-    // Calculate average period from multiple crossings for better accuracy
-    float totalPeriod = 0.0f;
-    int numPeriods = 0;
-
-    for (size_t i = 1; i < crossings.size(); ++i) {
-        size_t period = crossings[i] - crossings[i - 1];
-
-        // Filter out unreasonably short or long periods (20 Hz to 20 kHz)
-        float minPeriodSamples = sampleRate / 20000.0f;
-        float maxPeriodSamples = sampleRate / 20.0f;
-
-        if (period >= static_cast<size_t>(minPeriodSamples) &&
-            period <= static_cast<size_t>(maxPeriodSamples)) {
-            totalPeriod += static_cast<float>(period);
-            numPeriods++;
-        }
-    }
-
-    if (numPeriods == 0)
-        return 0.0f;
-
-    float avgPeriod = totalPeriod / numPeriods;
-    return sampleRate / avgPeriod;
 }
 
 void Oscilloscope::drawWaveform(juce::Graphics& g, juce::Rectangle<float> bounds,
