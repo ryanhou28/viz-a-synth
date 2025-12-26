@@ -193,6 +193,11 @@ void SpectrumAnalyzer::renderVisualization(juce::Graphics& g)
         drawHarmonicMarkers(g, bounds);
     }
 
+    // Draw aliasing markers when oscillator is not band-limited
+    if (showAliasingMarkers && !isBandLimited && hasEverPlayedNote && smoothedFundamental > 0.0f) {
+        drawAliasingMarkers(g, bounds);
+    }
+
     // Draw spectrum
     if (frozen) {
         drawSpectrum(g, bounds, frozenSpectrum, probeColour);
@@ -231,6 +236,14 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
     g.drawText(headerText, static_cast<int>(fullBounds.getX() + 5), static_cast<int>(fullBounds.getY() + 5),
                150, 15, juce::Justification::centredLeft);
 
+    // Show aliasing warning when oscillator is not band-limited
+    if (!isBandLimited) {
+        g.setColour(juce::Colours::orange);
+        g.setFont(11.0f);
+        g.drawText("ALIASING", static_cast<int>(fullBounds.getX() + 160), static_cast<int>(fullBounds.getY() + 5),
+                   70, 15, juce::Justification::centredLeft);
+    }
+
     // Draw frozen indicator
     if (frozen) {
         g.setColour(juce::Colours::red.withAlpha(0.8f));
@@ -262,6 +275,11 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
 
     // Draw window selector (before other toggles so tooltip renders on top)
     drawWindowSelector(g, fullBounds);
+
+    // Draw aliasing markers toggle (only when aliasing is active)
+    if (!isBandLimited) {
+        drawAliasingToggle(g, fullBounds);
+    }
 
     // Draw harmonic markers toggle
     drawHarmonicToggle(g, fullBounds);
@@ -381,6 +399,10 @@ void SpectrumAnalyzer::mouseDown(const juce::MouseEvent& event)
         showHarmonicMarkers = !showHarmonicMarkers;
         repaint();
     }
+    else if (aliasingButtonBounds.contains(pos) && !isBandLimited) {
+        showAliasingMarkers = !showAliasingMarkers;
+        repaint();
+    }
     else if (windowButtonBounds.contains(pos)) {
         // Cycle through window types
         int nextType = (static_cast<int>(currentWindowType) + 1) % 4;
@@ -428,6 +450,9 @@ void SpectrumAnalyzer::timerCallback()
             updateWaveformInfo();
         }
     }
+
+    // Track band-limiting state for aliasing visualization
+    isBandLimited = oscillator.isBandLimited();
 
     // Track fundamental frequency from ProbeManager
     fundamentalFrequency = probeManager.getActiveFrequency();
@@ -700,6 +725,100 @@ void SpectrumAnalyzer::drawHarmonicMarkers(juce::Graphics& g, juce::Rectangle<fl
         g.drawText(label, static_cast<int>(x - 12), static_cast<int>(labelY),
                    24, 10, juce::Justification::centred);
     }
+}
+
+void SpectrumAnalyzer::drawAliasingMarkers(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    if (smoothedFundamental <= 0.0f) return;
+
+    float nyquist = sampleRate / 2.0f;
+
+    // Aliasing occurs when harmonics exceed Nyquist
+    // The aliased frequency = fs - f (for first folding), 2*fs - f (for second), etc.
+    // Or more generally for frequency f above Nyquist:
+    //   - If f > Nyquist: aliased = fs - f (if this is positive) or fs - (f mod fs) etc.
+    //
+    // For a fundamental f0 with harmonic k, actual frequency is k*f0
+    // If k*f0 > Nyquist, it folds back to: fs - k*f0 (first alias)
+
+    juce::Colour aliasColour = juce::Colours::orange;
+
+    // Find harmonics that exceed Nyquist and show where they alias to
+    for (int n = 1; n <= 100; ++n) {  // Check up to 100 harmonics
+        float harmonicFreq = smoothedFundamental * static_cast<float>(n);
+
+        // Only process harmonics above Nyquist
+        if (harmonicFreq <= nyquist) continue;
+
+        // Calculate the aliased frequency using folding
+        // Frequency folding formula: aliased = abs(((freq + nyquist) mod fs) - nyquist)
+        // where fs = sampleRate, mod using floating point
+        float freqNormalized = std::fmod(harmonicFreq, sampleRate);
+        float aliasedFreq;
+        if (freqNormalized > nyquist) {
+            aliasedFreq = sampleRate - freqNormalized;
+        } else {
+            aliasedFreq = freqNormalized;
+        }
+
+        // Skip if aliased frequency is out of display range
+        if (aliasedFreq < MinFrequency || aliasedFreq > MaxFrequency)
+            continue;
+
+        // Skip if too close to an already-drawn marker (< 50 Hz apart)
+        // This is a simplification - a more sophisticated approach would track drawn positions
+
+        float x = frequencyToX(aliasedFreq, bounds);
+
+        // Draw dashed vertical line in warning color
+        g.setColour(aliasColour.withAlpha(0.7f));
+        const float dashLength = 3.0f;
+        float y = bounds.getY();
+        while (y < bounds.getBottom()) {
+            g.drawVerticalLine(static_cast<int>(x), y, std::min(y + dashLength, bounds.getBottom()));
+            y += dashLength * 2;
+        }
+
+        // Draw alias label at bottom (opposite of harmonic labels to avoid overlap)
+        g.setFont(8.0f);
+        g.setColour(aliasColour.withAlpha(0.9f));
+
+        // Show the original harmonic and where it aliased from
+        juce::String label = juce::String(n) + "f0";
+        juce::String sublabel = "(" + juce::String(static_cast<int>(aliasedFreq)) + "Hz)";
+
+        // Position at bottom, alternating height
+        float labelY = bounds.getBottom() - 22.0f - (n % 2 == 0 ? 10.0f : 0.0f);
+        g.drawText(label, static_cast<int>(x - 15), static_cast<int>(labelY),
+                   30, 10, juce::Justification::centred);
+        g.setFont(7.0f);
+        g.drawText(sublabel, static_cast<int>(x - 20), static_cast<int>(labelY + 10),
+                   40, 10, juce::Justification::centred);
+
+        // Limit the number of alias markers shown to avoid clutter
+        if (n > 50) break;
+    }
+}
+
+void SpectrumAnalyzer::drawAliasingToggle(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    float buttonWidth = 55.0f;
+    float buttonHeight = 18.0f;
+    float padding = 8.0f;
+
+    // Position to the left of the window selector
+    float windowButtonLeft = bounds.getRight() - (35.0f * 2 + 2.0f + padding) - 8.0f - 70.0f - 8.0f - 60.0f;
+    float startX = windowButtonLeft - buttonWidth - 8.0f;
+    float startY = bounds.getBottom() - buttonHeight - padding;
+
+    aliasingButtonBounds = juce::Rectangle<float>(startX, startY, buttonWidth, buttonHeight);
+
+    g.setColour(showAliasingMarkers ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff2a2a2a));
+    g.fillRoundedRectangle(aliasingButtonBounds, 3.0f);
+
+    g.setColour(showAliasingMarkers ? juce::Colours::orange.withAlpha(0.9f) : juce::Colours::grey);
+    g.setFont(10.0f);
+    g.drawText("Aliases", aliasingButtonBounds, juce::Justification::centred);
 }
 
 void SpectrumAnalyzer::drawWindowSelector(juce::Graphics& g, juce::Rectangle<float> bounds)

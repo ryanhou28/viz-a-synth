@@ -92,6 +92,16 @@ public:
     bool getShowHarmonics() const { return showHarmonicMarkers; }
 
     /**
+     * Enable/disable aliasing markers overlay (shows when oscillator is not band-limited).
+     */
+    void setShowAliasing(bool show) { showAliasingMarkers = show; }
+
+    /**
+     * Check if aliasing markers are shown.
+     */
+    bool getShowAliasing() const { return showAliasingMarkers; }
+
+    /**
      * Get the current fundamental frequency being tracked.
      */
     float getFundamentalFrequency() const { return fundamentalFrequency; }
@@ -170,6 +180,11 @@ private:
     void drawHarmonicMarkers(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
+     * Draw aliasing frequency markers (shows where harmonics fold back from Nyquist).
+     */
+    void drawAliasingMarkers(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
      * Draw voice mode toggle buttons.
      */
     void drawVoiceModeToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
@@ -178,6 +193,11 @@ private:
      * Draw harmonic markers toggle button.
      */
     void drawHarmonicToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Draw aliasing markers toggle button.
+     */
+    void drawAliasingToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
      * Draw window function selector button.
@@ -243,8 +263,10 @@ private:
     float fundamentalFrequency = 0.0f;
     float smoothedFundamental = 0.0f;
     bool showHarmonicMarkers = true;  // Show harmonic overlay by default
+    bool showAliasingMarkers = true;  // Show aliasing markers when oscillator is not band-limited
     bool hasEverPlayedNote = false;  // Track if a note has ever been played
     bool waveformInitialized = false;  // Deferred initialization flag
+    bool isBandLimited = true;  // Track if oscillator is currently band-limited
 
     // Cached waveform info
     OscillatorSource::Waveform currentWaveform = OscillatorSource::Waveform::Sine;
@@ -255,6 +277,7 @@ private:
     juce::Rectangle<float> mixButtonBounds;
     juce::Rectangle<float> voiceButtonBounds;
     juce::Rectangle<float> harmonicButtonBounds;
+    juce::Rectangle<float> aliasingButtonBounds;
     juce::Rectangle<float> windowButtonBounds;
 
     // Window function

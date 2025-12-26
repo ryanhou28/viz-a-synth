@@ -148,6 +148,11 @@ void VizASynthVoice::setOscillatorType(int type)
     }
 }
 
+void VizASynthVoice::setBandLimited(bool enabled)
+{
+    oscillator.setBandLimited(enabled);
+}
+
 void VizASynthVoice::setFilterType(int type)
 {
     switch (type)
@@ -251,6 +256,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout VizASynthAudioProcessor::cre
         "oscType", "Oscillator Type",
         juce::StringArray{"Sine", "Saw", "Square"}, 0));
 
+    // Band-limiting toggle (for aliasing demonstration)
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        "bandLimited", "Band Limited",
+        true));  // Default: enabled (PolyBLEP anti-aliasing)
+
     // Filter type
     layout.add(std::make_unique<juce::AudioParameterChoice>(
         "filterType", "Filter Type",
@@ -299,6 +309,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout VizASynthAudioProcessor::cre
 void VizASynthAudioProcessor::updateVoiceParameters()
 {
     auto oscType = apvts.getRawParameterValue("oscType")->load();
+    auto bandLimited = apvts.getRawParameterValue("bandLimited")->load() > 0.5f;
     auto filterType = apvts.getRawParameterValue("filterType")->load();
     auto cutoff = apvts.getRawParameterValue("cutoff")->load();
     auto resonance = apvts.getRawParameterValue("resonance")->load();
@@ -312,6 +323,7 @@ void VizASynthAudioProcessor::updateVoiceParameters()
         if (auto voice = dynamic_cast<VizASynthVoice*>(synth.getVoice(i)))
         {
             voice->setOscillatorType(static_cast<int>(oscType));
+            voice->setBandLimited(bandLimited);
             voice->setFilterType(static_cast<int>(filterType));
             voice->setFilterCutoff(cutoff);
             voice->setFilterResonance(resonance);

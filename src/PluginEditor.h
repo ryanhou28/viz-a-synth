@@ -92,6 +92,7 @@ private:
 
     // UI Components
     juce::ComboBox oscTypeCombo;
+    juce::ToggleButton bandLimitedToggle{"PolyBLEP"};
     juce::ComboBox filterTypeCombo;
     juce::Slider cutoffSlider;
     juce::Slider resonanceSlider;
@@ -121,6 +122,7 @@ private:
 
     // Parameter attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oscTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bandLimitedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> filterTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cutoffAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> resonanceAttachment;

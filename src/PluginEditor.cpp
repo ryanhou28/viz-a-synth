@@ -170,6 +170,11 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     oscTypeLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(oscTypeLabel);
 
+    // Setup band-limiting toggle (for aliasing demonstration)
+    bandLimitedToggle.setButtonText("PolyBLEP");
+    bandLimitedToggle.setTooltip("Enable band-limited oscillator (PolyBLEP)\nDisable to hear aliasing artifacts");
+    addAndMakeVisible(bandLimitedToggle);
+
     // Setup filter type combo box
     filterTypeCombo.addItem("LP", 1);   // Lowpass
     filterTypeCombo.addItem("HP", 2);   // Highpass
@@ -274,6 +279,9 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
 
     oscTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         apvts, "oscType", oscTypeCombo);
+
+    bandLimitedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        apvts, "bandLimited", bandLimitedToggle);
 
     filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         apvts, "filterType", filterTypeCombo);
@@ -511,7 +519,12 @@ void VizASynthAudioProcessorEditor::resized()
     // Oscillator section (centered vertically in osc panel)
     int oscComboY = oscY + config.getLayoutInt("components.oscillatorPanel.comboY", 40);
     oscTypeLabel.setBounds(panelX + layout.panelInnerMargin + layout.oscComboOffsetX, oscComboY, 100, layout.labelHeight);
-    oscTypeCombo.setBounds(panelX + layout.oscComboX + layout.oscComboOffsetX, oscComboY + config.getLayoutInt("components.oscillatorPanel.comboYOffset", -2), layout.oscComboWidth, layout.comboHeight);
+    oscTypeCombo.setBounds(panelX + layout.oscComboX + layout.oscComboOffsetX, oscComboY + config.getLayoutInt("components.oscillatorPanel.comboYOffset", -2), layout.oscComboWidth - 80, layout.comboHeight);
+
+    // Band-limiting toggle (PolyBLEP) - positioned to the right of oscillator type
+    int bandLimitedX = panelX + layout.oscComboX + layout.oscComboOffsetX + layout.oscComboWidth - 70;
+    int bandLimitedY = oscComboY + config.getLayoutInt("components.oscillatorPanel.comboYOffset", -2);
+    bandLimitedToggle.setBounds(bandLimitedX, bandLimitedY, 75, layout.comboHeight);
 
     // Filter section (centered vertically in filter panel)
     int filterLabelY = filterY + layout.filterLabelYOffset;
