@@ -4,6 +4,7 @@
 #include "Visualization/TimeDomain/Oscilloscope.h"
 #include "Visualization/FrequencyDomain/SpectrumAnalyzer.h"
 #include "Visualization/FrequencyDomain/HarmonicView.h"
+#include "Visualization/FrequencyDomain/BodePlot.h"
 #include "Visualization/ZDomain/PoleZeroPlot.h"
 #include "Visualization/SingleCycleView.h"
 #include "Visualization/EnvelopeVisualizer.h"
@@ -20,7 +21,8 @@ enum class VisualizationMode
     Oscilloscope,
     Spectrum,
     Harmonics,
-    PoleZero
+    PoleZero,
+    Bode
 };
 
 //==============================================================================
@@ -57,6 +59,7 @@ private:
     vizasynth::SpectrumAnalyzer spectrumAnalyzer;
     vizasynth::HarmonicView harmonicView;
     vizasynth::PoleZeroPlot poleZeroPlot;
+    vizasynth::BodePlot bodePlot;
     vizasynth::SingleCycleView singleCycleView;
     vizasynth::EnvelopeVisualizer envelopeVisualizer;
     VisualizationMode currentVizMode = VisualizationMode::Oscilloscope;
@@ -66,6 +69,7 @@ private:
     juce::TextButton spectrumButton{"Spectrum"};
     juce::TextButton harmonicsButton{"Harmonics"};
     juce::TextButton poleZeroButton{"P/Z"};
+    juce::TextButton bodeButton{"Bode"};
 
     // Probe selector buttons
     juce::TextButton probeOscButton{"OSC"};

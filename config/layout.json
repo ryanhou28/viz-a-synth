@@ -115,6 +115,15 @@
       "spectrum": {
         "width": 70
       },
+      "harmonics": {
+        "width": 70
+      },
+      "poleZero": {
+        "width": 35
+      },
+      "bode": {
+        "width": 45
+      },
       "probe": {
         "width": 45
       },

@@ -21,6 +21,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
                        throw std::runtime_error("No voices available to provide an oscillator.");
                    }()),
       poleZeroPlot(p.getProbeManager(), p.getFilterWrapper()),
+      bodePlot(p.getProbeManager(), p.getFilterWrapper()),
       singleCycleView(p.getProbeManager(),
                       [&]() -> vizasynth::PolyBLEPOscillator& {
                           if (auto* voice = p.getVoice(0)) {
@@ -42,6 +43,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     addAndMakeVisible(spectrumAnalyzer);
     addAndMakeVisible(harmonicView);
     addAndMakeVisible(poleZeroPlot);
+    addAndMakeVisible(bodePlot);
     addAndMakeVisible(singleCycleView);
     addAndMakeVisible(envelopeVisualizer);
 
@@ -65,6 +67,11 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     poleZeroButton.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
     poleZeroButton.onClick = [this]() { setVisualizationMode(VisualizationMode::PoleZero); };
     addAndMakeVisible(poleZeroButton);
+
+    bodeButton.setClickingTogglesState(false);
+    bodeButton.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
+    bodeButton.onClick = [this]() { setVisualizationMode(VisualizationMode::Bode); };
+    addAndMakeVisible(bodeButton);
 
     // Initial visualization mode
     setVisualizationMode(VisualizationMode::Oscilloscope);
@@ -98,6 +105,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
         spectrumAnalyzer.setFrozen(frozen);
         harmonicView.setFrozen(frozen);
         poleZeroPlot.setFrozen(frozen);
+        bodePlot.setFrozen(frozen);
         singleCycleView.setFrozen(frozen);
     };
     addAndMakeVisible(freezeButton);
@@ -110,6 +118,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
         spectrumAnalyzer.clearTrace();
         harmonicView.clearTrace();
         poleZeroPlot.clearTrace();
+        bodePlot.clearTrace();
         singleCycleView.clearFrozenTrace();
     };
     addAndMakeVisible(clearTraceButton);
@@ -517,6 +526,7 @@ void VizASynthAudioProcessorEditor::resized()
         spectrumAnalyzer.setBounds(scopeArea);  // Hidden but positioned
         harmonicView.setBounds(scopeArea);      // Hidden but positioned
         poleZeroPlot.setBounds(scopeArea);      // Hidden but positioned
+        bodePlot.setBounds(scopeArea);          // Hidden but positioned
     }
     else if (currentVizMode == VisualizationMode::Spectrum)
     {
@@ -525,6 +535,7 @@ void VizASynthAudioProcessorEditor::resized()
         singleCycleView.setBounds(scopeArea);   // Hidden but positioned
         harmonicView.setBounds(scopeArea);      // Hidden but positioned
         poleZeroPlot.setBounds(scopeArea);      // Hidden but positioned
+        bodePlot.setBounds(scopeArea);          // Hidden but positioned
     }
     else if (currentVizMode == VisualizationMode::Harmonics)
     {
@@ -533,19 +544,31 @@ void VizASynthAudioProcessorEditor::resized()
         singleCycleView.setBounds(scopeArea);   // Hidden but positioned
         spectrumAnalyzer.setBounds(scopeArea);  // Hidden but positioned
         poleZeroPlot.setBounds(scopeArea);      // Hidden but positioned
+        bodePlot.setBounds(scopeArea);          // Hidden but positioned
     }
-    else // PoleZero mode
+    else if (currentVizMode == VisualizationMode::PoleZero)
     {
         poleZeroPlot.setBounds(scopeArea);
         oscilloscope.setBounds(scopeArea);      // Hidden but positioned
         singleCycleView.setBounds(scopeArea);   // Hidden but positioned
         spectrumAnalyzer.setBounds(scopeArea);  // Hidden but positioned
         harmonicView.setBounds(scopeArea);      // Hidden but positioned
+        bodePlot.setBounds(scopeArea);          // Hidden but positioned
+    }
+    else // Bode mode
+    {
+        bodePlot.setBounds(scopeArea);
+        oscilloscope.setBounds(scopeArea);      // Hidden but positioned
+        singleCycleView.setBounds(scopeArea);   // Hidden but positioned
+        spectrumAnalyzer.setBounds(scopeArea);  // Hidden but positioned
+        harmonicView.setBounds(scopeArea);      // Hidden but positioned
+        poleZeroPlot.setBounds(scopeArea);      // Hidden but positioned
     }
 
     // Controls below visualization
     int harmonicsButtonWidth = config.getLayoutInt("components.buttons.harmonics.width", 70);
     int poleZeroButtonWidth = config.getLayoutInt("components.buttons.poleZero.width", 35);
+    int bodeButtonWidth = config.getLayoutInt("components.buttons.bode.width", 45);
     auto vizControlArea = vizArea.reduced(layout.vizControlAreaHPad, layout.vizControlAreaVPad);
     scopeButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlScopeWidth));
     vizControlArea.removeFromLeft(layout.vizControlScopeSpacing);
@@ -554,6 +577,8 @@ void VizASynthAudioProcessorEditor::resized()
     harmonicsButton.setBounds(vizControlArea.removeFromLeft(harmonicsButtonWidth));
     vizControlArea.removeFromLeft(layout.vizControlScopeSpacing);
     poleZeroButton.setBounds(vizControlArea.removeFromLeft(poleZeroButtonWidth));
+    vizControlArea.removeFromLeft(layout.vizControlScopeSpacing);
+    bodeButton.setBounds(vizControlArea.removeFromLeft(bodeButtonWidth));
     vizControlArea.removeFromLeft(layout.vizControlSectionSpacing);
     probeOscButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlProbeWidth));
     vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
@@ -612,7 +637,7 @@ void VizASynthAudioProcessorEditor::applyThemeToComponents()
     auto& config = vizasynth::ConfigurationManager::getInstance();
 
     // Apply slider colors
-    auto thumbColor = config.getThemeColour("colors.sliders.rotaryFill", juce::Colour(0xff4CAF50));
+    auto thumbColor = config.getThemeColour("colors.sliders.rotaryFill", juce::Colour(0xff5c9fd4));
     auto trackColor = config.getThemeColour("colors.sliders.rotaryOutline", juce::Colour(0xff2d2d44));
     auto textBoxBg = config.getThemeColour("colors.sliders.textBox", juce::Colour(0xff1a1a2e));
     auto textBoxText = config.getThemeColour("colors.sliders.textBoxText", juce::Colour(0xffe0e0e0));
@@ -645,7 +670,7 @@ void VizASynthAudioProcessorEditor::applyThemeToComponents()
     auto buttonText = config.getThemeColour("colors.buttons.text", juce::Colour(0xffe0e0e0));
     auto toggleOnColor = config.getThemeColour("colors.buttons.toggleOn", juce::Colours::red.darker());
 
-    for (auto* btn : {&scopeButton, &spectrumButton, &harmonicsButton, &poleZeroButton, &probeOscButton, &probeFilterButton,
+    for (auto* btn : {&scopeButton, &spectrumButton, &harmonicsButton, &poleZeroButton, &bodeButton, &probeOscButton, &probeFilterButton,
                       &probeOutputButton, &clearTraceButton}) {
         btn->setColour(juce::TextButton::buttonColourId, buttonDefault);
         btn->setColour(juce::TextButton::textColourOffId, buttonText);
@@ -707,6 +732,7 @@ void VizASynthAudioProcessorEditor::updateVisualizationMode()
     bool isSpectrum = (currentVizMode == VisualizationMode::Spectrum);
     bool isHarmonics = (currentVizMode == VisualizationMode::Harmonics);
     bool isPoleZero = (currentVizMode == VisualizationMode::PoleZero);
+    bool isBode = (currentVizMode == VisualizationMode::Bode);
 
     // Show/hide appropriate visualization
     oscilloscope.setVisible(isScope);
@@ -714,6 +740,7 @@ void VizASynthAudioProcessorEditor::updateVisualizationMode()
     spectrumAnalyzer.setVisible(isSpectrum);
     harmonicView.setVisible(isHarmonics);
     poleZeroPlot.setVisible(isPoleZero);
+    bodePlot.setVisible(isBode);
 
     // Update button highlighting
     scopeButton.setColour(juce::TextButton::buttonColourId,
@@ -724,6 +751,8 @@ void VizASynthAudioProcessorEditor::updateVisualizationMode()
                               isHarmonics ? config.getAccentColour() : config.getPanelBackgroundColour());
     poleZeroButton.setColour(juce::TextButton::buttonColourId,
                               isPoleZero ? config.getAccentColour() : config.getPanelBackgroundColour());
+    bodeButton.setColour(juce::TextButton::buttonColourId,
+                         isBode ? config.getAccentColour() : config.getPanelBackgroundColour());
 
     // Show/hide time window control (only relevant for oscilloscope)
     timeWindowSlider.setEnabled(isScope);
