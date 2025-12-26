@@ -105,6 +105,13 @@ public:
     void setShowPhaseAtCutoff(bool show) { showPhaseAtCutoff = show; repaint(); }
     bool getShowPhaseAtCutoff() const { return showPhaseAtCutoff; }
 
+    /**
+     * Enable/disable DFT of h[n] overlay.
+     * Demonstrates that frequency response = DFT of impulse response.
+     */
+    void setShowDFTOverlay(bool show) { showDFTOverlay = show; repaint(); }
+    bool getShowDFTOverlay() const { return showDFTOverlay; }
+
     //=========================================================================
     // Static Colors
     //=========================================================================
@@ -112,6 +119,7 @@ public:
     static juce::Colour getMagnitudeColour() { return juce::Colour(0xff00e5ff); }  // Cyan
     static juce::Colour getPhaseColour() { return juce::Colour(0xffff9500); }       // Orange
     static juce::Colour getCutoffMarkerColour() { return juce::Colour(0xffff4444); } // Red
+    static juce::Colour getDFTOverlayColour() { return juce::Colour(0xffffff00); }  // Yellow - DFT of h[n]
     static juce::Colour getGridColour() { return juce::Colour(0xff2d2d44); }
     static juce::Colour getGridMajorColour() { return juce::Colour(0xff3d3d54); }
 
@@ -131,6 +139,7 @@ protected:
 
     void resized() override;
     void mouseMove(const juce::MouseEvent& event) override;
+    void mouseDown(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
 
     //=========================================================================
@@ -192,6 +201,18 @@ private:
      */
     void drawDisplayModeToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
 
+    /**
+     * Draw DFT of h[n] overlay on magnitude plot.
+     * Demonstrates that H(e^jω) = DFT{h[n]}.
+     */
+    void drawDFTOverlay(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Compute frequency response from DFT of impulse response h[n].
+     * This demonstrates that H(e^jω) = Σ h[n] * e^(-jωn)
+     */
+    FrequencyResponse computeFrequencyResponseFromDFT(int numPoints) const;
+
     //=========================================================================
     // Coordinate Conversion
     //=========================================================================
@@ -248,6 +269,14 @@ private:
     bool showCutoffAnnotation = true;
     bool showRolloffAnnotation = true;
     bool showPhaseAtCutoff = true;
+    bool showDFTOverlay = false;
+
+    // Cached DFT response (computed from h[n])
+    FrequencyResponse cachedDFTResponse;
+    FrequencyResponse frozenDFTResponse;
+
+    // Number of impulse response samples for DFT computation
+    static constexpr int DFTImpulseSamples = 256;
 
     // Mouse hover state
     bool isHovering = false;
@@ -269,6 +298,7 @@ private:
     juce::Rectangle<float> magnitudeButtonBounds;
     juce::Rectangle<float> phaseButtonBounds;
     juce::Rectangle<float> combinedButtonBounds;
+    juce::Rectangle<float> dftToggleButtonBounds;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BodePlot)
 };

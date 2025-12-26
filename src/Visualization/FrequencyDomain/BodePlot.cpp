@@ -31,12 +31,14 @@ void BodePlot::setFrozen(bool freeze) {
     if (freeze && !frozen) {
         // Capture current state when freezing
         frozenResponse = cachedResponse;
+        frozenDFTResponse = cachedDFTResponse;
     }
     VisualizationPanel::setFrozen(freeze);
 }
 
 void BodePlot::clearTrace() {
     frozenResponse = FrequencyResponse();
+    frozenDFTResponse = FrequencyResponse();
     repaint();
 }
 
@@ -48,6 +50,12 @@ void BodePlot::timerCallback() {
     if (!frozen) {
         // Update cached frequency response from filter
         cachedResponse = filterWrapper.getFrequencyResponse(NumResponsePoints);
+
+        // Update DFT-based response if overlay is enabled
+        if (showDFTOverlay) {
+            cachedDFTResponse = computeFrequencyResponseFromDFT(NumResponsePoints);
+        }
+
         repaint();
     }
 }
@@ -83,6 +91,11 @@ void BodePlot::renderVisualization(juce::Graphics& g) {
     // Draw magnitude curve
     if (displayMode != DisplayMode::PhaseOnly) {
         drawMagnitudeCurve(g, magBounds, response, getMagnitudeColour());
+
+        // Draw DFT overlay if enabled
+        if (showDFTOverlay) {
+            drawDFTOverlay(g, magBounds);
+        }
 
         // Draw cutoff annotation
         if (showCutoffAnnotation) {
@@ -145,6 +158,14 @@ void BodePlot::renderEquations(juce::Graphics& g) {
     g.drawText("\xe2\x88\xa0H(e^jw) = arg(H) degrees", bounds.getX() + 8, y,
                bounds.getWidth() - 16, lineHeight, juce::Justification::centredLeft);
     y += lineHeight;
+
+    // DFT relationship (shown when overlay is enabled)
+    if (showDFTOverlay) {
+        g.setColour(getDFTOverlayColour());
+        g.drawText("H(e^jw) = DFT{h[n]} = \xce\xa3 h[n]e^-jwn", bounds.getX() + 8, y,
+                   bounds.getWidth() - 16, lineHeight, juce::Justification::centredLeft);
+        y += lineHeight;
+    }
 
     // Filter type specific info
     g.setColour(getDimTextColour());
@@ -481,7 +502,7 @@ void BodePlot::drawHeader(juce::Graphics& g, juce::Rectangle<float> bounds) {
     g.drawText(headerText, bounds, juce::Justification::centredLeft);
 
     // Draw legend on right side
-    float legendX = bounds.getRight() - 150;
+    float legendX = bounds.getRight() - 200;
     float legendY = bounds.getY() + 5;
 
     g.setFont(10.0f);
@@ -497,6 +518,17 @@ void BodePlot::drawHeader(juce::Graphics& g, juce::Rectangle<float> bounds) {
     g.fillRect(legendX + 50, legendY + 4, 12.0f, 2.0f);
     g.setColour(getDimTextColour());
     g.drawText("Phase", legendX + 65, legendY, 40, 12, juce::Justification::left);
+
+    // DFT legend (if enabled)
+    if (showDFTOverlay) {
+        g.setColour(getDFTOverlayColour());
+        // Draw dashed line for DFT legend
+        for (float dx = 0; dx < 12; dx += 4) {
+            g.fillRect(legendX + 110 + dx, legendY + 4, 2.0f, 2.0f);
+        }
+        g.setColour(getDimTextColour());
+        g.drawText("DFT", legendX + 125, legendY, 30, 12, juce::Justification::left);
+    }
 
     // Frozen indicator
     if (frozen) {
@@ -586,6 +618,7 @@ void BodePlot::drawDisplayModeToggle(juce::Graphics& g, juce::Rectangle<float> b
     float spacing = 2.0f;
     float padding = 8.0f;
 
+    // Display mode buttons on the right
     float startX = bounds.getRight() - (buttonWidth * 3 + spacing * 2 + padding);
     float startY = bounds.getBottom() - buttonHeight - padding;
 
@@ -611,6 +644,16 @@ void BodePlot::drawDisplayModeToggle(juce::Graphics& g, juce::Rectangle<float> b
     g.fillRoundedRectangle(phaseButtonBounds, 3.0f);
     g.setColour(displayMode == DisplayMode::PhaseOnly ? getPhaseColour() : juce::Colours::grey);
     g.drawText("Phase", phaseButtonBounds, juce::Justification::centred);
+
+    // DFT overlay toggle button on the left side of the display mode buttons
+    float dftButtonWidth = 50.0f;
+    float dftStartX = startX - dftButtonWidth - spacing * 4;
+    dftToggleButtonBounds = juce::Rectangle<float>(dftStartX, startY, dftButtonWidth, buttonHeight);
+
+    g.setColour(showDFTOverlay ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff2a2a2a));
+    g.fillRoundedRectangle(dftToggleButtonBounds, 3.0f);
+    g.setColour(showDFTOverlay ? getDFTOverlayColour() : juce::Colours::grey);
+    g.drawText("DFT h[n]", dftToggleButtonBounds, juce::Justification::centred);
 }
 
 //=============================================================================
@@ -723,6 +766,32 @@ void BodePlot::resized() {
     VisualizationPanel::resized();
 }
 
+void BodePlot::mouseDown(const juce::MouseEvent& event) {
+    // Check display mode buttons
+    if (combinedButtonBounds.contains(event.position)) {
+        setDisplayMode(DisplayMode::Combined);
+        return;
+    }
+    if (magnitudeButtonBounds.contains(event.position)) {
+        setDisplayMode(DisplayMode::MagnitudeOnly);
+        return;
+    }
+    if (phaseButtonBounds.contains(event.position)) {
+        setDisplayMode(DisplayMode::PhaseOnly);
+        return;
+    }
+
+    // Check DFT toggle button
+    if (dftToggleButtonBounds.contains(event.position)) {
+        setShowDFTOverlay(!showDFTOverlay);
+        // Compute DFT response immediately if enabling
+        if (showDFTOverlay && cachedDFTResponse.points.empty()) {
+            cachedDFTResponse = computeFrequencyResponseFromDFT(NumResponsePoints);
+        }
+        return;
+    }
+}
+
 void BodePlot::mouseMove(const juce::MouseEvent& event) {
     auto magBounds = getMagnitudeBounds();
     auto phaseBounds = getPhaseBounds();
@@ -756,6 +825,88 @@ void BodePlot::mouseExit(const juce::MouseEvent& /*event*/) {
     if (isHovering) {
         isHovering = false;
         repaint();
+    }
+}
+
+//=============================================================================
+// DFT Overlay
+//=============================================================================
+
+FrequencyResponse BodePlot::computeFrequencyResponseFromDFT(int numPoints) const {
+    float sampleRate = static_cast<float>(probeManager.getSampleRate());
+    FrequencyResponse response(sampleRate);
+    response.reserve(static_cast<size_t>(numPoints));
+
+    // Get impulse response h[n]
+    std::vector<float> impulse = filterWrapper.getImpulseResponse(DFTImpulseSamples);
+
+    if (impulse.empty()) return response;
+
+    // Compute DFT at log-spaced frequencies from 20 Hz to Nyquist
+    // H(e^jω) = Σ h[n] * e^(-jωn) for n = 0 to N-1
+    for (int i = 0; i < numPoints; ++i) {
+        // Log-spaced frequencies
+        float t = static_cast<float>(i) / static_cast<float>(numPoints - 1);
+        float minFreq = 20.0f;
+        float maxFreq = sampleRate / 2.0f;
+        float freqHz = minFreq * std::pow(maxFreq / minFreq, t);
+
+        // Convert to normalized frequency (0 to π)
+        float normalizedFreq = (2.0f * static_cast<float>(M_PI) * freqHz) / sampleRate;
+
+        // Compute DFT at this frequency: H(e^jω) = Σ h[n] * e^(-jωn)
+        Complex H{0.0f, 0.0f};
+        for (size_t n = 0; n < impulse.size(); ++n) {
+            float angle = -normalizedFreq * static_cast<float>(n);
+            H += impulse[n] * std::polar(1.0f, angle);
+        }
+
+        float magLinear = std::abs(H);
+        float magDB = 20.0f * std::log10(std::max(magLinear, 1e-10f));
+        float phaseRad = std::arg(H);
+
+        response.addPoint(FrequencyResponsePoint(freqHz, normalizedFreq, magDB, magLinear, phaseRad));
+    }
+
+    return response;
+}
+
+void BodePlot::drawDFTOverlay(juce::Graphics& g, juce::Rectangle<float> bounds) {
+    const auto& dftResponse = frozen ? frozenDFTResponse : cachedDFTResponse;
+
+    if (dftResponse.points.empty()) return;
+
+    juce::Path dftPath;
+    bool pathStarted = false;
+
+    for (const auto& point : dftResponse.points) {
+        if (point.frequencyHz < MinFrequency || point.frequencyHz > MaxFrequency)
+            continue;
+
+        float x = frequencyToX(point.frequencyHz, bounds);
+        float dB = juce::jlimit(MinMagnitudeDB, MaxMagnitudeDB, point.magnitudeDB);
+        float y = magnitudeToY(dB, bounds);
+
+        if (!pathStarted) {
+            dftPath.startNewSubPath(x, y);
+            pathStarted = true;
+        } else {
+            dftPath.lineTo(x, y);
+        }
+    }
+
+    if (pathStarted) {
+        // Draw dashed line for DFT overlay to distinguish from the filter response
+        juce::Colour dftColour = getDFTOverlayColour();
+
+        // Draw the DFT curve with a dashed pattern
+        float dashLengths[] = { 6.0f, 4.0f };
+        juce::Path dashedPath;
+        juce::PathStrokeType strokeType(2.0f);
+        strokeType.createDashedStroke(dashedPath, dftPath, dashLengths, 2);
+
+        g.setColour(dftColour);
+        g.strokePath(dashedPath, juce::PathStrokeType(2.0f));
     }
 }
 

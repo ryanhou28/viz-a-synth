@@ -542,6 +542,22 @@ void ImpulseResponse::resized() {
     VisualizationPanel::resized();
 }
 
+void ImpulseResponse::mouseDown(const juce::MouseEvent& event) {
+    // Check display mode buttons
+    if (stemButtonBounds.contains(event.position)) {
+        setDisplayMode(DisplayMode::StemPlot);
+        return;
+    }
+    if (lineButtonBounds.contains(event.position)) {
+        setDisplayMode(DisplayMode::LinePlot);
+        return;
+    }
+    if (combinedButtonBounds.contains(event.position)) {
+        setDisplayMode(DisplayMode::Combined);
+        return;
+    }
+}
+
 void ImpulseResponse::mouseMove(const juce::MouseEvent& event) {
     auto bounds = getVisualizationBounds();
 

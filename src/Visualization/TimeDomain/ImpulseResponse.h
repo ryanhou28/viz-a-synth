@@ -139,6 +139,7 @@ protected:
 
     void resized() override;
     void mouseMove(const juce::MouseEvent& event) override;
+    void mouseDown(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
 
     //=========================================================================
