@@ -7,6 +7,7 @@
 #include "Visualization/FrequencyDomain/BodePlot.h"
 #include "Visualization/ZDomain/PoleZeroPlot.h"
 #include "Visualization/ZDomain/TransferFunctionDisplay.h"
+#include "Visualization/TimeDomain/ImpulseResponse.h"
 #include "Visualization/SingleCycleView.h"
 #include "Visualization/EnvelopeVisualizer.h"
 #include "UI/LevelMeter.h"
@@ -24,7 +25,8 @@ enum class VisualizationMode
     Harmonics,
     PoleZero,
     Bode,
-    TransferFunction
+    TransferFunction,
+    ImpulseResponse
 };
 
 //==============================================================================
@@ -63,6 +65,7 @@ private:
     vizasynth::PoleZeroPlot poleZeroPlot;
     vizasynth::BodePlot bodePlot;
     vizasynth::TransferFunctionDisplay transferFunctionDisplay;
+    vizasynth::ImpulseResponse impulseResponse;
     vizasynth::SingleCycleView singleCycleView;
     vizasynth::EnvelopeVisualizer envelopeVisualizer;
     VisualizationMode currentVizMode = VisualizationMode::Oscilloscope;
@@ -74,6 +77,7 @@ private:
     juce::TextButton poleZeroButton{"P/Z"};
     juce::TextButton bodeButton{"Bode"};
     juce::TextButton transferFunctionButton{"H(z)"};
+    juce::TextButton impulseResponseButton{"h[n]"};
 
     // Probe selector buttons
     juce::TextButton probeOscButton{"OSC"};

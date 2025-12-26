@@ -299,6 +299,52 @@ public:
     }
 
     /**
+     * Calculate impulse response h[n].
+     * Computes the filter's response to a unit impulse input.
+     * Uses a copy of the filter to avoid disturbing the actual filter state.
+     */
+    std::vector<float> getImpulseResponse(int numSamples) const override {
+        std::vector<float> response(static_cast<size_t>(numSamples), 0.0f);
+
+        // Create a temporary filter with the same settings
+        juce::dsp::StateVariableTPTFilter<float> tempFilter;
+
+        juce::dsp::ProcessSpec spec;
+        spec.sampleRate = currentSampleRate;
+        spec.maximumBlockSize = 1;
+        spec.numChannels = 1;
+        tempFilter.prepare(spec);
+
+        tempFilter.setCutoffFrequency(cutoffHz);
+        tempFilter.setResonance(resonanceQ);
+
+        switch (filterType) {
+            case Type::LowPass:
+                tempFilter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+                break;
+            case Type::HighPass:
+                tempFilter.setType(juce::dsp::StateVariableTPTFilterType::highpass);
+                break;
+            case Type::BandPass:
+                tempFilter.setType(juce::dsp::StateVariableTPTFilterType::bandpass);
+                break;
+            default:
+                tempFilter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+                break;
+        }
+
+        tempFilter.reset();
+
+        // Apply unit impulse: x[0] = 1, x[n] = 0 for n > 0
+        for (int n = 0; n < numSamples; ++n) {
+            float input = (n == 0) ? 1.0f : 0.0f;
+            response[static_cast<size_t>(n)] = tempFilter.processSample(0, input);
+        }
+
+        return response;
+    }
+
+    /**
      * Direct access to internal filter for processing audio blocks.
      * Use this for efficient block-based processing instead of sample-by-sample.
      */
