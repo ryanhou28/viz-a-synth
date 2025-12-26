@@ -95,7 +95,7 @@ public:
      * Get the transfer function H(z).
      * Must be implemented by all filter types.
      */
-    TransferFunction getTransferFunction() const override = 0;
+    std::optional<TransferFunction> getTransferFunction() const override = 0;
 
     /**
      * Get the pole locations in the z-plane.
@@ -117,7 +117,10 @@ public:
         FrequencyResponse response(static_cast<float>(getSampleRate()));
         response.reserve(static_cast<size_t>(numPoints));
 
-        TransferFunction tf = getTransferFunction();
+        auto tfOpt = getTransferFunction();
+        if (!tfOpt) return response;
+
+        TransferFunction tf = *tfOpt;
         float sampleRate = static_cast<float>(getSampleRate());
 
         for (int i = 0; i < numPoints; ++i) {

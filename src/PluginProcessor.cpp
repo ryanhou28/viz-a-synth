@@ -288,6 +288,10 @@ void VizASynthAudioProcessor::updateVoiceParameters()
             voice->setADSR(attack, decay, sustain, release);
         }
     }
+
+    // Update the filter wrapper for pole-zero visualization
+    filterWrapper.setCutoff(cutoff);
+    filterWrapper.setResonance(resonance);
 }
 
 //==============================================================================
@@ -350,6 +354,9 @@ void VizASynthAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlo
         if (auto voice = dynamic_cast<VizASynthVoice*>(synth.getVoice(i)))
             voice->prepareToPlay(sampleRate, samplesPerBlock);
     }
+
+    // Prepare filter wrapper for pole-zero visualization
+    filterWrapper.prepare(sampleRate, samplesPerBlock);
 }
 
 void VizASynthAudioProcessor::releaseResources()

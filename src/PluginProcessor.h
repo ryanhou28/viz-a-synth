@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include "Visualization/ProbeBuffer.h"
 #include "DSP/Oscillators/PolyBLEPOscillator.h"
+#include "DSP/Filters/StateVariableFilterWrapper.h"
 
 //==============================================================================
 /**
@@ -132,7 +133,13 @@ public:
         return nullptr;
     }
 
+    // Get filter wrapper for pole-zero visualization
+    // This is a shared wrapper that mirrors the voice filter settings
+    vizasynth::StateVariableFilterWrapper& getFilterWrapper() { return filterWrapper; }
+
 private:
+    // Filter wrapper for visualization (mirrors voice filter settings)
+    vizasynth::StateVariableFilterWrapper filterWrapper;
     //==============================================================================
     juce::Synthesiser synth;
     juce::AudioProcessorValueTreeState apvts;
