@@ -6,6 +6,7 @@
 #include "Visualization/FrequencyDomain/HarmonicView.h"
 #include "Visualization/FrequencyDomain/BodePlot.h"
 #include "Visualization/ZDomain/PoleZeroPlot.h"
+#include "Visualization/ZDomain/TransferFunctionDisplay.h"
 #include "Visualization/SingleCycleView.h"
 #include "Visualization/EnvelopeVisualizer.h"
 #include "UI/LevelMeter.h"
@@ -22,7 +23,8 @@ enum class VisualizationMode
     Spectrum,
     Harmonics,
     PoleZero,
-    Bode
+    Bode,
+    TransferFunction
 };
 
 //==============================================================================
@@ -60,6 +62,7 @@ private:
     vizasynth::HarmonicView harmonicView;
     vizasynth::PoleZeroPlot poleZeroPlot;
     vizasynth::BodePlot bodePlot;
+    vizasynth::TransferFunctionDisplay transferFunctionDisplay;
     vizasynth::SingleCycleView singleCycleView;
     vizasynth::EnvelopeVisualizer envelopeVisualizer;
     VisualizationMode currentVizMode = VisualizationMode::Oscilloscope;
@@ -70,6 +73,7 @@ private:
     juce::TextButton harmonicsButton{"Harmonics"};
     juce::TextButton poleZeroButton{"P/Z"};
     juce::TextButton bodeButton{"Bode"};
+    juce::TextButton transferFunctionButton{"H(z)"};
 
     // Probe selector buttons
     juce::TextButton probeOscButton{"OSC"};
