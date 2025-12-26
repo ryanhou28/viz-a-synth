@@ -235,6 +235,16 @@ private:
     void drawWindowTooltip(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
+     * Draw frequency folding diagram inset.
+     */
+    void drawFoldingDiagram(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Draw folding diagram toggle button.
+     */
+    void drawFoldingToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
      * Rebuild the window function with current type.
      */
     void rebuildWindow();
@@ -301,6 +311,7 @@ private:
     juce::Rectangle<float> aliasingButtonBounds;
     juce::Rectangle<float> nyquistButtonBounds;
     juce::Rectangle<float> windowButtonBounds;
+    juce::Rectangle<float> foldingDiagramButtonBounds;
 
     // Window function
     WindowType currentWindowType = WindowType::Hann;
@@ -308,6 +319,9 @@ private:
     bool showWindowTooltip = false;
     bool showBandLimitingTooltip = false;  // Track if hovering over Nyquist marker area
     juce::Rectangle<float> nyquistMarkerBounds;  // Hit area for Nyquist marker tooltip
+
+    // Frequency folding diagram
+    bool showFoldingDiagram = false;  // Show frequency folding diagram (off by default)
 
     // Display range
     static constexpr float MinFrequency = 20.0f;

@@ -281,6 +281,11 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
     // Draw Nyquist marker toggle
     drawNyquistToggle(g, fullBounds);
 
+    // Draw folding diagram toggle (only when aliasing is active)
+    if (!isBandLimited) {
+        drawFoldingToggle(g, fullBounds);
+    }
+
     // Draw aliasing markers toggle (only when aliasing is active)
     if (!isBandLimited) {
         drawAliasingToggle(g, fullBounds);
@@ -321,6 +326,11 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
     // Draw window function inset
     drawWindowInset(g, fullBounds);
 
+    // Draw frequency folding diagram (when enabled and aliasing is active)
+    if (!isBandLimited) {
+        drawFoldingDiagram(g, fullBounds);
+    }
+
     // Draw window tooltip (last so it renders on top of everything)
     drawWindowTooltip(g, fullBounds);
 
@@ -333,6 +343,12 @@ void SpectrumAnalyzer::renderEquations(juce::Graphics& g)
     if (!showEquations) return;
 
     auto bounds = getEquationBounds();
+
+    // Expand bounds if showing aliasing context
+    if (!isBandLimited) {
+        bounds = bounds.withHeight(bounds.getHeight() + 45.0f);
+    }
+
     g.setColour(juce::Colour(0xcc16213e));
     g.fillRoundedRectangle(bounds, 5.0f);
 
@@ -382,6 +398,44 @@ void SpectrumAnalyzer::renderEquations(juce::Graphics& g)
     g.drawText(nfsInfo, static_cast<int>(bounds.getX() + bounds.getWidth() / 2), static_cast<int>(bounds.getY() + yOffset),
                static_cast<int>(bounds.getWidth() / 2 - 8), static_cast<int>(lineHeight),
                juce::Justification::centredRight);
+    yOffset += lineHeight;
+
+    // Show Nyquist theorem and frequency folding when aliasing is active
+    if (!isBandLimited) {
+        yOffset += 4.0f;  // Extra spacing before aliasing section
+
+        // Draw separator line
+        g.setColour(juce::Colours::orange.withAlpha(0.3f));
+        g.drawHorizontalLine(static_cast<int>(bounds.getY() + yOffset - 2),
+                            bounds.getX() + 8, bounds.getRight() - 8);
+
+        // Nyquist theorem
+        g.setColour(juce::Colours::orange.withAlpha(0.95f));
+        g.setFont(11.0f);
+        juce::String nyquistTheorem = "Nyquist Theorem: fs > 2*fmax";
+        g.drawText(nyquistTheorem, static_cast<int>(bounds.getX() + 8), static_cast<int>(bounds.getY() + yOffset),
+                   static_cast<int>(bounds.getWidth() - 16), static_cast<int>(lineHeight),
+                   juce::Justification::centredLeft);
+        yOffset += lineHeight;
+
+        // Current sample rate and Nyquist frequency
+        float nyquist = sampleRate / 2.0f;
+        g.setColour(getTextColour());
+        g.setFont(10.0f);
+        juce::String currentValues = juce::String("fs = ") + formatSampleRate(sampleRate) +
+                                     ", fN = " + juce::String(nyquist / 1000.0f, 2) + " kHz";
+        g.drawText(currentValues, static_cast<int>(bounds.getX() + 8), static_cast<int>(bounds.getY() + yOffset),
+                   static_cast<int>(bounds.getWidth() - 16), static_cast<int>(lineHeight),
+                   juce::Justification::centredLeft);
+        yOffset += lineHeight;
+
+        // Frequency folding formula
+        g.setColour(juce::Colour(0xffffff00).withAlpha(0.9f));
+        juce::String foldingFormula = "Folding: falias = fs - f  (when f > fN)";
+        g.drawText(foldingFormula, static_cast<int>(bounds.getX() + 8), static_cast<int>(bounds.getY() + yOffset),
+                   static_cast<int>(bounds.getWidth() - 16), static_cast<int>(lineHeight),
+                   juce::Justification::centredLeft);
+    }
 }
 
 void SpectrumAnalyzer::resized()
@@ -409,6 +463,10 @@ void SpectrumAnalyzer::mouseDown(const juce::MouseEvent& event)
     }
     else if (aliasingButtonBounds.contains(pos) && !isBandLimited) {
         showAliasingMarkers = !showAliasingMarkers;
+        repaint();
+    }
+    else if (foldingDiagramButtonBounds.contains(pos) && !isBandLimited) {
+        showFoldingDiagram = !showFoldingDiagram;
         repaint();
     }
     else if (nyquistButtonBounds.contains(pos)) {
@@ -1128,6 +1186,170 @@ void SpectrumAnalyzer::drawWindowTooltip(juce::Graphics& g, juce::Rectangle<floa
                    juce::Justification::centredLeft);
         textY += lineHeight;
     }
+}
+
+void SpectrumAnalyzer::drawFoldingDiagram(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    if (!showFoldingDiagram) return;
+
+    // Small diagram showing frequency folding around Nyquist
+    float diagramWidth = 120.0f;
+    float diagramHeight = 50.0f;
+    float margin = 5.0f;
+
+    // Position in bottom-right corner, above the toggle buttons
+    juce::Rectangle<float> diagramBounds(
+        bounds.getRight() - diagramWidth - margin - 8.0f,
+        bounds.getBottom() - diagramHeight - 35.0f,  // Above toggle buttons
+        diagramWidth,
+        diagramHeight
+    );
+
+    // Draw background
+    g.setColour(juce::Colour(0xcc16213e));
+    g.fillRoundedRectangle(diagramBounds, 4.0f);
+
+    // Draw border
+    g.setColour(juce::Colours::orange.withAlpha(0.5f));
+    g.drawRoundedRectangle(diagramBounds, 4.0f, 1.5f);
+
+    // Title
+    g.setColour(juce::Colours::orange.withAlpha(0.9f));
+    g.setFont(9.0f);
+    g.drawText("Frequency Folding", diagramBounds.removeFromTop(12), juce::Justification::centred);
+
+    // Reduce bounds for graph area
+    juce::Rectangle<float> graphBounds = diagramBounds.reduced(6.0f, 2.0f);
+
+    float nyquist = sampleRate / 2.0f;
+    float fs = sampleRate;
+
+    // Draw horizontal axis (0 to fs)
+    g.setColour(getDimTextColour());
+    g.drawHorizontalLine(static_cast<int>(graphBounds.getBottom() - 12),
+                        graphBounds.getX(), graphBounds.getRight());
+
+    // Mark key frequencies on axis
+    // 0 Hz
+    g.setFont(7.0f);
+    g.drawText("0", static_cast<int>(graphBounds.getX()), static_cast<int>(graphBounds.getBottom() - 10),
+               15, 10, juce::Justification::centredLeft);
+
+    // Nyquist (center)
+    float nyquistX = graphBounds.getCentreX();
+    g.setColour(juce::Colour(0xffff4444));
+    g.drawVerticalLine(static_cast<int>(nyquistX), graphBounds.getY(), graphBounds.getBottom() - 12);
+    g.setFont(7.0f);
+    g.drawText("fN", static_cast<int>(nyquistX - 8), static_cast<int>(graphBounds.getBottom() - 10),
+               16, 10, juce::Justification::centred);
+
+    // fs (right edge)
+    g.setColour(getDimTextColour());
+    g.drawText("fs", static_cast<int>(graphBounds.getRight() - 12), static_cast<int>(graphBounds.getBottom() - 10),
+               12, 10, juce::Justification::centredRight);
+
+    // Draw folding visualization
+    // Show a frequency above Nyquist and its alias
+    if (smoothedFundamental > 0.0f && !isBandLimited) {
+        // Find first harmonic above Nyquist
+        int firstAliasingHarmonic = -1;
+        float harmonicAboveNyquist = 0.0f;
+        float aliasedFreq = 0.0f;
+
+        for (int n = 1; n <= 20; ++n) {
+            float f = smoothedFundamental * static_cast<float>(n);
+            if (f > nyquist && f < fs) {
+                firstAliasingHarmonic = n;
+                harmonicAboveNyquist = f;
+                // Calculate aliased frequency
+                float freqNormalized = std::fmod(harmonicAboveNyquist, sampleRate);
+                if (freqNormalized > nyquist) {
+                    aliasedFreq = sampleRate - freqNormalized;
+                }
+                break;
+            }
+        }
+
+        // Draw the folding example if we found one
+        if (firstAliasingHarmonic > 0) {
+            // Map frequency to x position (0 to fs maps to graphBounds.getX() to graphBounds.getRight())
+            auto freqToX = [&](float freq) {
+                return graphBounds.getX() + (freq / fs) * graphBounds.getWidth();
+            };
+
+            float origX = freqToX(harmonicAboveNyquist);
+            float aliasX = freqToX(aliasedFreq);
+
+            // Draw the original frequency (above Nyquist)
+            g.setColour(juce::Colours::orange.withAlpha(0.8f));
+            float markerY = graphBounds.getY() + 5;
+            g.fillEllipse(origX - 2.5f, markerY, 5.0f, 5.0f);
+            g.setFont(7.0f);
+            g.drawText(juce::String(firstAliasingHarmonic) + "f0",
+                      static_cast<int>(origX - 10), static_cast<int>(markerY - 8),
+                      20, 8, juce::Justification::centred);
+
+            // Draw curved arrow showing folding
+            juce::Path arrow;
+            arrow.startNewSubPath(origX, markerY + 5);
+            // Curve down and back to alias position
+            arrow.cubicTo(origX, markerY + 12,
+                         aliasX, markerY + 12,
+                         aliasX, markerY + 5);
+
+            g.setColour(juce::Colours::yellow.withAlpha(0.7f));
+            juce::PathStrokeType strokeType(1.0f);
+            g.strokePath(arrow, strokeType);
+
+            // Draw arrowhead at alias position
+            juce::Path arrowhead;
+            arrowhead.startNewSubPath(aliasX - 2, markerY + 3);
+            arrowhead.lineTo(aliasX, markerY + 5);
+            arrowhead.lineTo(aliasX + 2, markerY + 3);
+            g.strokePath(arrowhead, strokeType);
+
+            // Draw the aliased frequency
+            g.setColour(juce::Colours::yellow.withAlpha(0.9f));
+            g.fillEllipse(aliasX - 2.5f, markerY, 5.0f, 5.0f);
+            g.setFont(7.0f);
+            juce::String aliasLabel = juce::String(static_cast<int>(aliasedFreq)) + "Hz";
+            g.drawText(aliasLabel, static_cast<int>(aliasX - 12), static_cast<int>(markerY + 6),
+                      24, 8, juce::Justification::centred);
+        }
+    } else if (isBandLimited) {
+        // Show that no folding occurs with band-limiting
+        g.setColour(juce::Colour(0xff4caf50).withAlpha(0.8f));
+        g.setFont(8.0f);
+        g.drawText("No aliasing", graphBounds.reduced(2.0f), juce::Justification::centred);
+        g.setFont(7.0f);
+        g.drawText("(band-limited)", graphBounds.reduced(2.0f).withTop(graphBounds.getCentreY()),
+                  juce::Justification::centred);
+    }
+}
+
+void SpectrumAnalyzer::drawFoldingToggle(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    // Only show this toggle when aliasing is active
+    if (isBandLimited) return;
+
+    float buttonWidth = 55.0f;
+    float buttonHeight = 18.0f;
+    float padding = 8.0f;
+
+    // Position to the left of the aliasing toggle
+    // Find aliasing button position and place to its left
+    float aliasingButtonLeft = bounds.getRight() - (35.0f * 2 + 2.0f + padding) - 8.0f - 70.0f - 8.0f - 60.0f - 8.0f - 55.0f;
+    float startX = aliasingButtonLeft - buttonWidth - 8.0f;
+    float startY = bounds.getBottom() - buttonHeight - padding;
+
+    foldingDiagramButtonBounds = juce::Rectangle<float>(startX, startY, buttonWidth, buttonHeight);
+
+    g.setColour(showFoldingDiagram ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff2a2a2a));
+    g.fillRoundedRectangle(foldingDiagramButtonBounds, 3.0f);
+
+    g.setColour(showFoldingDiagram ? juce::Colours::yellow.withAlpha(0.9f) : juce::Colours::grey);
+    g.setFont(10.0f);
+    g.drawText("Folding", foldingDiagramButtonBounds, juce::Justification::centred);
 }
 
 void SpectrumAnalyzer::updateWaveformInfo()
