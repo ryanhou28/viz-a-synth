@@ -185,8 +185,10 @@ void SpectrumAnalyzer::renderVisualization(juce::Graphics& g)
     auto bounds = getVisualizationBounds();
     auto probeColour = getProbeColour(probeManager.getActiveProbe());
 
-    // Draw Nyquist marker
-    drawNyquistMarker(g, bounds);
+    // Draw Nyquist marker (if enabled)
+    if (showNyquistMarker) {
+        drawNyquistMarker(g, bounds);
+    }
 
     // Draw harmonic markers (behind spectrum curve) - only after a note has been played
     if (showHarmonicMarkers && hasEverPlayedNote && smoothedFundamental > 0.0f) {
@@ -276,6 +278,9 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
     // Draw window selector (before other toggles so tooltip renders on top)
     drawWindowSelector(g, fullBounds);
 
+    // Draw Nyquist marker toggle
+    drawNyquistToggle(g, fullBounds);
+
     // Draw aliasing markers toggle (only when aliasing is active)
     if (!isBandLimited) {
         drawAliasingToggle(g, fullBounds);
@@ -318,6 +323,9 @@ void SpectrumAnalyzer::renderOverlay(juce::Graphics& g)
 
     // Draw window tooltip (last so it renders on top of everything)
     drawWindowTooltip(g, fullBounds);
+
+    // Draw band-limiting tooltip when hovering over Nyquist marker
+    drawBandLimitingAnnotation(g, fullBounds);
 }
 
 void SpectrumAnalyzer::renderEquations(juce::Graphics& g)
@@ -403,6 +411,10 @@ void SpectrumAnalyzer::mouseDown(const juce::MouseEvent& event)
         showAliasingMarkers = !showAliasingMarkers;
         repaint();
     }
+    else if (nyquistButtonBounds.contains(pos)) {
+        showNyquistMarker = !showNyquistMarker;
+        repaint();
+    }
     else if (windowButtonBounds.contains(pos)) {
         // Cycle through window types
         int nextType = (static_cast<int>(currentWindowType) + 1) % 4;
@@ -413,18 +425,23 @@ void SpectrumAnalyzer::mouseDown(const juce::MouseEvent& event)
 
 void SpectrumAnalyzer::mouseMove(const juce::MouseEvent& event)
 {
-    bool wasShowingTooltip = showWindowTooltip;
-    showWindowTooltip = windowButtonBounds.contains(event.position);
+    bool wasShowingWindowTooltip = showWindowTooltip;
+    bool wasShowingBandLimitingTooltip = showBandLimitingTooltip;
 
-    if (showWindowTooltip != wasShowingTooltip) {
+    showWindowTooltip = windowButtonBounds.contains(event.position);
+    showBandLimitingTooltip = nyquistMarkerBounds.contains(event.position);
+
+    if (showWindowTooltip != wasShowingWindowTooltip ||
+        showBandLimitingTooltip != wasShowingBandLimitingTooltip) {
         repaint();
     }
 }
 
 void SpectrumAnalyzer::mouseExit(const juce::MouseEvent& /*event*/)
 {
-    if (showWindowTooltip) {
+    if (showWindowTooltip || showBandLimitingTooltip) {
         showWindowTooltip = false;
+        showBandLimitingTooltip = false;
         repaint();
     }
 }
@@ -581,27 +598,142 @@ void SpectrumAnalyzer::drawNyquistMarker(juce::Graphics& g, juce::Rectangle<floa
 {
     float nyquist = sampleRate / 2.0f;
 
-    if (nyquist <= MaxFrequency) {
-        float x = frequencyToX(nyquist, bounds);
+    // Always draw the Nyquist marker - it's a fundamental reference point
+    // If Nyquist > MaxFrequency, clamp to right edge of display
+    float x;
+    bool isOffscreen = nyquist > MaxFrequency;
 
-        // Draw dashed line
-        g.setColour(juce::Colours::red.withAlpha(0.5f));
+    if (isOffscreen) {
+        // Place at right edge with indicator that Nyquist is beyond display range
+        x = bounds.getRight() - 5.0f;
+    } else {
+        x = frequencyToX(nyquist, bounds);
+    }
 
-        const float dashLength = 4.0f;
-        float y = bounds.getY();
-        while (y < bounds.getBottom()) {
-            g.drawVerticalLine(static_cast<int>(x), y, std::min(y + dashLength, bounds.getBottom()));
-            y += dashLength * 2;
+    // Draw prominent solid line at Nyquist (always visible, more prominent)
+    // Use a brighter, more noticeable color for the main line
+    juce::Colour nyquistColour = juce::Colour(0xffff4444);  // Bright red
+    g.setColour(nyquistColour.withAlpha(0.8f));
+
+    // Draw a solid line (more prominent than dashed)
+    g.drawVerticalLine(static_cast<int>(x), bounds.getY(), bounds.getBottom());
+
+    // Draw a slightly thicker glow effect for emphasis
+    g.setColour(nyquistColour.withAlpha(0.3f));
+    g.fillRect(x - 1.5f, bounds.getY(), 3.0f, bounds.getHeight());
+
+    // Store bounds for tooltip hit testing (area around the Nyquist line)
+    nyquistMarkerBounds = juce::Rectangle<float>(x - 30, bounds.getY(), 60, bounds.getHeight());
+
+    // Draw label box at top with sample rate info
+    float labelWidth = 140.0f;
+    float labelHeight = 30.0f;
+    float labelX = x - labelWidth / 2;
+
+    // Adjust if too close to edge
+    if (labelX < bounds.getX()) labelX = bounds.getX() + 5;
+    if (labelX + labelWidth > bounds.getRight()) labelX = bounds.getRight() - labelWidth - 5;
+
+    juce::Rectangle<float> labelBounds(labelX, bounds.getY() + 5, labelWidth, labelHeight);
+
+    // Draw label background
+    g.setColour(juce::Colour(0xdd16213e));
+    g.fillRoundedRectangle(labelBounds, 4.0f);
+    g.setColour(nyquistColour.withAlpha(0.6f));
+    g.drawRoundedRectangle(labelBounds, 4.0f, 1.0f);
+
+    // Draw "NYQUIST" header (with arrow if offscreen)
+    g.setColour(nyquistColour);
+    auto boldFont = g.getCurrentFont().withHeight(11.0f);
+    boldFont.setBold(true);
+    g.setFont(boldFont);
+    juce::String headerText = isOffscreen ? "NYQUIST ->" : "NYQUIST";
+    g.drawText(headerText, labelBounds.removeFromTop(14), juce::Justification::centred);
+
+    // Draw frequency info with dual display
+    g.setColour(juce::Colours::white.withAlpha(0.9f));
+    g.setFont(10.0f);
+    auto nyquistFreq = FrequencyValue::fromHz(nyquist, sampleRate);
+    juce::String freqText = juce::String(nyquist / 1000.0f, 2) + " kHz (" + nyquistFreq.toNormalizedString() + ")";
+    g.drawText(freqText, labelBounds, juce::Justification::centred);
+
+    // Draw sample rate context at bottom of Nyquist line
+    g.setColour(nyquistColour.withAlpha(0.9f));
+    g.setFont(9.0f);
+    juce::String fsText = "fs = " + formatSampleRate(sampleRate);
+    g.drawText(fsText, static_cast<int>(x - 40), static_cast<int>(bounds.getBottom() - 15),
+               80, 12, juce::Justification::centred);
+}
+
+void SpectrumAnalyzer::drawBandLimitingAnnotation(juce::Graphics& g, juce::Rectangle<float> /*bounds*/)
+{
+    if (!showBandLimitingTooltip) return;
+
+    // Tooltip explaining band-limiting and Nyquist
+    juce::StringArray lines;
+    if (isBandLimited) {
+        lines.add("Band-Limited Mode (PolyBLEP)");
+        lines.add("");
+        lines.add("PolyBLEP ensures no energy");
+        lines.add("above the Nyquist frequency.");
+        lines.add("");
+        lines.add("This prevents aliasing by");
+        lines.add("smoothing waveform transitions.");
+    } else {
+        lines.add("Naive Mode (No Band-Limiting)");
+        lines.add("");
+        lines.add("Harmonics above Nyquist");
+        lines.add("'fold back' into the spectrum.");
+        lines.add("");
+        lines.add("Nyquist Theorem: fs > 2*fmax");
+        lines.add("Violation causes aliasing.");
+    }
+
+    float lineHeight = 13.0f;
+    float tooltipWidth = 200.0f;
+    float tooltipHeight = static_cast<float>(lines.size()) * lineHeight + 16.0f;
+
+    // Position tooltip near the Nyquist marker
+    float tooltipX = nyquistMarkerBounds.getX() - tooltipWidth - 10;
+    float tooltipY = nyquistMarkerBounds.getY() + 50;
+
+    // Make sure tooltip stays within bounds
+    if (tooltipX < 10.0f) {
+        tooltipX = nyquistMarkerBounds.getRight() + 10;
+    }
+
+    juce::Rectangle<float> tooltipBounds(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
+
+    // Draw tooltip background
+    g.setColour(juce::Colour(0xee1a1a2e));
+    g.fillRoundedRectangle(tooltipBounds, 5.0f);
+
+    // Draw tooltip border (red for naive, green for band-limited)
+    juce::Colour borderColour = isBandLimited ? juce::Colour(0xff4caf50) : juce::Colours::orange;
+    g.setColour(borderColour.withAlpha(0.7f));
+    g.drawRoundedRectangle(tooltipBounds, 5.0f, 1.5f);
+
+    // Draw tooltip text
+    float textY = tooltipBounds.getY() + 8.0f;
+
+    for (int i = 0; i < lines.size(); ++i) {
+        // First line (header) in colored bold
+        if (i == 0) {
+            g.setColour(borderColour);
+            auto headerFont = g.getCurrentFont().withHeight(11.0f);
+            headerFont.setBold(true);
+            g.setFont(headerFont);
+        } else {
+            g.setColour(juce::Colours::white.withAlpha(0.9f));
+            g.setFont(10.0f);
         }
 
-        // Label with dual frequency display
-        g.setFont(10.0f);
-        g.setColour(juce::Colours::red.withAlpha(0.7f));
-
-        auto nyquistFreq = FrequencyValue::fromHz(nyquist, sampleRate);
-        g.drawText("Nyquist (" + nyquistFreq.toNormalizedString() + ")",
-                   static_cast<int>(x - 50), static_cast<int>(bounds.getY() + 15),
-                   100, 12, juce::Justification::centred);
+        g.drawText(lines[i], static_cast<int>(tooltipBounds.getX() + 10.0f),
+                   static_cast<int>(textY),
+                   static_cast<int>(tooltipBounds.getWidth() - 20.0f),
+                   static_cast<int>(lineHeight),
+                   juce::Justification::centredLeft);
+        textY += lineHeight;
     }
 }
 
@@ -806,9 +938,9 @@ void SpectrumAnalyzer::drawAliasingToggle(juce::Graphics& g, juce::Rectangle<flo
     float buttonHeight = 18.0f;
     float padding = 8.0f;
 
-    // Position to the left of the window selector
-    float windowButtonLeft = bounds.getRight() - (35.0f * 2 + 2.0f + padding) - 8.0f - 70.0f - 8.0f - 60.0f;
-    float startX = windowButtonLeft - buttonWidth - 8.0f;
+    // Position to the left of the Nyquist toggle
+    float nyquistButtonLeft = bounds.getRight() - (35.0f * 2 + 2.0f + padding) - 8.0f - 70.0f - 8.0f - 60.0f - 8.0f - 55.0f;
+    float startX = nyquistButtonLeft - buttonWidth - 8.0f;
     float startY = bounds.getBottom() - buttonHeight - padding;
 
     aliasingButtonBounds = juce::Rectangle<float>(startX, startY, buttonWidth, buttonHeight);
@@ -819,6 +951,28 @@ void SpectrumAnalyzer::drawAliasingToggle(juce::Graphics& g, juce::Rectangle<flo
     g.setColour(showAliasingMarkers ? juce::Colours::orange.withAlpha(0.9f) : juce::Colours::grey);
     g.setFont(10.0f);
     g.drawText("Aliases", aliasingButtonBounds, juce::Justification::centred);
+}
+
+void SpectrumAnalyzer::drawNyquistToggle(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    float buttonWidth = 55.0f;
+    float buttonHeight = 18.0f;
+    float padding = 8.0f;
+
+    // Position to the left of the window selector
+    float windowButtonLeft = bounds.getRight() - (35.0f * 2 + 2.0f + padding) - 8.0f - 70.0f - 8.0f - 60.0f;
+    float startX = windowButtonLeft - buttonWidth - 8.0f;
+    float startY = bounds.getBottom() - buttonHeight - padding;
+
+    nyquistButtonBounds = juce::Rectangle<float>(startX, startY, buttonWidth, buttonHeight);
+
+    g.setColour(showNyquistMarker ? juce::Colour(0xff4a4a4a) : juce::Colour(0xff2a2a2a));
+    g.fillRoundedRectangle(nyquistButtonBounds, 3.0f);
+
+    // Red color when enabled to match the Nyquist marker
+    g.setColour(showNyquistMarker ? juce::Colour(0xffff4444).withAlpha(0.9f) : juce::Colours::grey);
+    g.setFont(10.0f);
+    g.drawText("Nyquist", nyquistButtonBounds, juce::Justification::centred);
 }
 
 void SpectrumAnalyzer::drawWindowSelector(juce::Graphics& g, juce::Rectangle<float> bounds)

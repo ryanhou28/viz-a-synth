@@ -102,6 +102,16 @@ public:
     bool getShowAliasing() const { return showAliasingMarkers; }
 
     /**
+     * Enable/disable Nyquist frequency marker.
+     */
+    void setShowNyquist(bool show) { showNyquistMarker = show; }
+
+    /**
+     * Check if Nyquist marker is shown.
+     */
+    bool getShowNyquist() const { return showNyquistMarker; }
+
+    /**
      * Get the current fundamental frequency being tracked.
      */
     float getFundamentalFrequency() const { return fundamentalFrequency; }
@@ -170,9 +180,14 @@ private:
                       const std::array<float, FFTSize / 2>& magnitudes, juce::Colour colour);
 
     /**
-     * Draw Nyquist frequency marker.
+     * Draw Nyquist frequency marker (always visible).
      */
     void drawNyquistMarker(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Draw band-limiting tooltip/annotation explaining PolyBLEP.
+     */
+    void drawBandLimitingAnnotation(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
      * Draw harmonic markers overlay (f₀, 2f₀, 3f₀, etc.).
@@ -198,6 +213,11 @@ private:
      * Draw aliasing markers toggle button.
      */
     void drawAliasingToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Draw Nyquist marker toggle button.
+     */
+    void drawNyquistToggle(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
      * Draw window function selector button.
@@ -264,6 +284,7 @@ private:
     float smoothedFundamental = 0.0f;
     bool showHarmonicMarkers = true;  // Show harmonic overlay by default
     bool showAliasingMarkers = true;  // Show aliasing markers when oscillator is not band-limited
+    bool showNyquistMarker = false;   // Show Nyquist marker (off by default - can be toggled on)
     bool hasEverPlayedNote = false;  // Track if a note has ever been played
     bool waveformInitialized = false;  // Deferred initialization flag
     bool isBandLimited = true;  // Track if oscillator is currently band-limited
@@ -278,12 +299,15 @@ private:
     juce::Rectangle<float> voiceButtonBounds;
     juce::Rectangle<float> harmonicButtonBounds;
     juce::Rectangle<float> aliasingButtonBounds;
+    juce::Rectangle<float> nyquistButtonBounds;
     juce::Rectangle<float> windowButtonBounds;
 
     // Window function
     WindowType currentWindowType = WindowType::Hann;
     std::array<float, FFTSize> windowCoefficients{};  // Pre-computed window values for inset display
     bool showWindowTooltip = false;
+    bool showBandLimitingTooltip = false;  // Track if hovering over Nyquist marker area
+    juce::Rectangle<float> nyquistMarkerBounds;  // Hit area for Nyquist marker tooltip
 
     // Display range
     static constexpr float MinFrequency = 20.0f;
