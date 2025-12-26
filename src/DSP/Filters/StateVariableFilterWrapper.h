@@ -170,9 +170,18 @@ public:
                 tf.numerator = {b0, b1, b2};
                 break;
             }
-            default:
-                tf.numerator = {g2 * a0_inv, 2.0f * g2 * a0_inv, g2 * a0_inv};
+            case Type::Notch: {
+                // Notch: H(z) = (1 - 2*cos(ω)*z^-1 + z^-2) / denominator
+                // Notch zeros are on unit circle at cutoff frequency
+                float omega = 2.0f * static_cast<float>(M_PI) * cutoffHz / static_cast<float>(currentSampleRate);
+                float cosOmega = std::cos(omega);
+                float b0 = 1.0f * a0_inv;
+                float b1 = -2.0f * cosOmega * a0_inv;
+                float b2 = 1.0f * a0_inv;
+
+                tf.numerator = {b0, b1, b2};
                 break;
+            }
         }
 
         // Denominator is the same for all types (normalized, a0 = 1)
@@ -249,9 +258,10 @@ public:
                 return "H_{HP}(z) = \\frac{1 - 2z^{-1} + z^{-2}}{1 + a_1 z^{-1} + a_2 z^{-2}}";
             case Type::BandPass:
                 return "H_{BP}(z) = \\frac{gk(1 - z^{-2})}{1 + a_1 z^{-1} + a_2 z^{-2}}";
-            default:
-                return FilterNode::getTransferFunctionLatex();
+            case Type::Notch:
+                return "H_{N}(z) = \\frac{1 - 2\\cos(\\omega_c)z^{-1} + z^{-2}}{1 + a_1 z^{-1} + a_2 z^{-2}}";
         }
+        return FilterNode::getTransferFunctionLatex();
     }
 
     std::string getDifferenceEquationLatex() const override {
@@ -328,7 +338,8 @@ public:
             case Type::BandPass:
                 tempFilter.setType(juce::dsp::StateVariableTPTFilterType::bandpass);
                 break;
-            default:
+            case Type::Notch:
+                // JUCE SVF doesn't have notch - use lowpass as fallback for impulse response
                 tempFilter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
                 break;
         }

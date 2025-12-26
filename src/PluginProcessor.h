@@ -26,6 +26,7 @@ public:
 
     // Parameter setters
     void setOscillatorType(int type);
+    void setFilterType(int type);
     void setFilterCutoff(float cutoff);
     void setFilterResonance(float resonance);
     void setADSR(float attack, float decay, float sustain, float release);

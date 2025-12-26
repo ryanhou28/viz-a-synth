@@ -148,6 +148,29 @@ void VizASynthVoice::setOscillatorType(int type)
     }
 }
 
+void VizASynthVoice::setFilterType(int type)
+{
+    switch (type)
+    {
+        case 0: // Lowpass
+            filter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+            break;
+        case 1: // Highpass
+            filter.setType(juce::dsp::StateVariableTPTFilterType::highpass);
+            break;
+        case 2: // Bandpass
+            filter.setType(juce::dsp::StateVariableTPTFilterType::bandpass);
+            break;
+        case 3: // Notch - JUCE SVF doesn't have notch, use lowpass as fallback
+            // Note: For a proper notch, we'd need a different filter implementation
+            filter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+            break;
+        default:
+            filter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+            break;
+    }
+}
+
 void VizASynthVoice::setFilterCutoff(float cutoff)
 {
     filter.setCutoffFrequency(cutoff);
@@ -228,6 +251,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout VizASynthAudioProcessor::cre
         "oscType", "Oscillator Type",
         juce::StringArray{"Sine", "Saw", "Square"}, 0));
 
+    // Filter type
+    layout.add(std::make_unique<juce::AudioParameterChoice>(
+        "filterType", "Filter Type",
+        juce::StringArray{"Lowpass", "Highpass", "Bandpass", "Notch"}, 0));
+
     // Filter cutoff
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         "cutoff", "Filter Cutoff",
@@ -271,6 +299,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout VizASynthAudioProcessor::cre
 void VizASynthAudioProcessor::updateVoiceParameters()
 {
     auto oscType = apvts.getRawParameterValue("oscType")->load();
+    auto filterType = apvts.getRawParameterValue("filterType")->load();
     auto cutoff = apvts.getRawParameterValue("cutoff")->load();
     auto resonance = apvts.getRawParameterValue("resonance")->load();
     auto attack = apvts.getRawParameterValue("attack")->load();
@@ -283,6 +312,7 @@ void VizASynthAudioProcessor::updateVoiceParameters()
         if (auto voice = dynamic_cast<VizASynthVoice*>(synth.getVoice(i)))
         {
             voice->setOscillatorType(static_cast<int>(oscType));
+            voice->setFilterType(static_cast<int>(filterType));
             voice->setFilterCutoff(cutoff);
             voice->setFilterResonance(resonance);
             voice->setADSR(attack, decay, sustain, release);
@@ -290,6 +320,17 @@ void VizASynthAudioProcessor::updateVoiceParameters()
     }
 
     // Update the filter wrapper for pole-zero visualization
+    // Convert int filter type to FilterNode::Type enum
+    vizasynth::FilterNode::Type wrapperFilterType;
+    switch (static_cast<int>(filterType))
+    {
+        case 0: wrapperFilterType = vizasynth::FilterNode::Type::LowPass; break;
+        case 1: wrapperFilterType = vizasynth::FilterNode::Type::HighPass; break;
+        case 2: wrapperFilterType = vizasynth::FilterNode::Type::BandPass; break;
+        case 3: wrapperFilterType = vizasynth::FilterNode::Type::Notch; break;
+        default: wrapperFilterType = vizasynth::FilterNode::Type::LowPass; break;
+    }
+    filterWrapper.setType(wrapperFilterType);
     filterWrapper.setCutoff(cutoff);
     filterWrapper.setResonance(resonance);
 }

@@ -152,8 +152,8 @@ void PoleZeroPlot::renderEquations(juce::Graphics& g) {
         case FilterNode::Type::BandPass:
             eqText = "H(z) = gk(1-z^-2) / (1+a1*z^-1+a2*z^-2)";
             break;
-        default:
-            eqText = "H(z) = B(z) / A(z)";
+        case FilterNode::Type::Notch:
+            eqText = "H(z) = (1-2cos(wc)z^-1+z^-2) / (1+a1*z^-1+a2*z^-2)";
             break;
     }
 

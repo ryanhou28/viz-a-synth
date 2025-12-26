@@ -170,6 +170,17 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     oscTypeLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(oscTypeLabel);
 
+    // Setup filter type combo box
+    filterTypeCombo.addItem("LP", 1);   // Lowpass
+    filterTypeCombo.addItem("HP", 2);   // Highpass
+    filterTypeCombo.addItem("BP", 3);   // Bandpass
+    filterTypeCombo.addItem("N", 4);    // Notch
+    addAndMakeVisible(filterTypeCombo);
+
+    filterTypeLabel.setText("Type", juce::dontSendNotification);
+    filterTypeLabel.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(filterTypeLabel);
+
     int filterSliderTextWidth = 60;
     int filterSliderTextHeight = 20;
 
@@ -263,6 +274,9 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
 
     oscTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         apvts, "oscType", oscTypeCombo);
+
+    filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        apvts, "filterType", filterTypeCombo);
 
     cutoffAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "cutoff", cutoffSlider);
@@ -502,6 +516,15 @@ void VizASynthAudioProcessorEditor::resized()
     // Filter section (centered vertically in filter panel)
     int filterLabelY = filterY + layout.filterLabelYOffset;
     int filterKnobY = filterLabelY + layout.labelHeight + layout.filterKnobYOffset;
+
+    // Filter type combo box (positioned to the left of cutoff knob)
+    int filterTypeX = panelX + config.getLayoutInt("components.filterPanel.typeX", 18);
+    int filterTypeWidth = config.getLayoutInt("components.filterPanel.typeWidth", 55);
+    int filterTypeComboY = filterKnobY + config.getLayoutInt("components.filterPanel.typeYOffset", 15);
+    int filterTypeComboHeight = config.getLayoutInt("components.filterPanel.typeHeight", 30);
+    filterTypeLabel.setBounds(filterTypeX, filterLabelY, filterTypeWidth, layout.labelHeight);
+    filterTypeCombo.setBounds(filterTypeX, filterTypeComboY, filterTypeWidth, filterTypeComboHeight);
+
     cutoffLabel.setBounds(panelX + layout.filterKnob1X, filterLabelY, layout.filterKnobSize, layout.labelHeight);
     cutoffSlider.setBounds(panelX + layout.filterKnob1X, filterKnobY, layout.filterKnobSize, layout.filterKnobSize);
     resonanceLabel.setBounds(panelX + layout.filterKnob2X, filterLabelY, layout.filterKnobSize, layout.labelHeight);
@@ -738,7 +761,7 @@ void VizASynthAudioProcessorEditor::applyThemeToComponents()
 
     // Apply label colors
     auto labelColor = config.getThemeColour("colors.labels.text", juce::Colour(0xffe0e0e0));
-    for (auto* label : {&oscTypeLabel, &cutoffLabel, &resonanceLabel, &attackLabel,
+    for (auto* label : {&oscTypeLabel, &filterTypeLabel, &cutoffLabel, &resonanceLabel, &attackLabel,
                         &decayLabel, &sustainLabel, &releaseLabel, &masterVolumeLabel, &timeWindowLabel}) {
         label->setColour(juce::Label::textColourId, labelColor);
     }

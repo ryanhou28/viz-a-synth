@@ -92,6 +92,7 @@ private:
 
     // UI Components
     juce::ComboBox oscTypeCombo;
+    juce::ComboBox filterTypeCombo;
     juce::Slider cutoffSlider;
     juce::Slider resonanceSlider;
     juce::Slider attackSlider;
@@ -100,6 +101,7 @@ private:
     juce::Slider releaseSlider;
 
     juce::Label oscTypeLabel;
+    juce::Label filterTypeLabel;
     juce::Label cutoffLabel;
     juce::Label resonanceLabel;
     juce::Label attackLabel;
@@ -119,6 +121,7 @@ private:
 
     // Parameter attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oscTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> filterTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cutoffAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> resonanceAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attackAttachment;
