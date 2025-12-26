@@ -50,6 +50,7 @@ target_include_directories(VizASynth
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/DSP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Visualization
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/Visualization/SignalFlow
         ${CMAKE_CURRENT_SOURCE_DIR}/src/UI
 )
 

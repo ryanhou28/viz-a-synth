@@ -13,6 +13,7 @@
 #include "UI/LevelMeter.h"
 #include "UI/VirtualKeyboard.h"
 #include "Core/Configuration.h"
+#include "Visualization/SignalFlow/SignalFlowView.h"
 
 //==============================================================================
 /**
@@ -68,6 +69,7 @@ private:
     vizasynth::ImpulseResponse impulseResponse;
     vizasynth::SingleCycleView singleCycleView;
     vizasynth::EnvelopeVisualizer envelopeVisualizer;
+    vizasynth::SignalFlowView signalFlowView;
     VisualizationMode currentVizMode = VisualizationMode::Oscilloscope;
 
     // Visualization mode selector

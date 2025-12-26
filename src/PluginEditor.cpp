@@ -31,7 +31,8 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
                           }
                           throw std::runtime_error("No voices available to provide an oscillator.");
                       }()),
-      envelopeVisualizer(p.getAPVTS())
+      envelopeVisualizer(p.getAPVTS()),
+      signalFlowView(p.getProbeManager())
 {
     // Set editor size from configuration
     auto& config = vizasynth::ConfigurationManager::getInstance();
@@ -50,6 +51,12 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     addAndMakeVisible(impulseResponse);
     addAndMakeVisible(singleCycleView);
     addAndMakeVisible(envelopeVisualizer);
+    addAndMakeVisible(signalFlowView);
+
+    // Setup signal flow view callback to sync probe buttons
+    signalFlowView.setProbeSelectionCallback([this](vizasynth::ProbePoint) {
+        updateProbeButtons();
+    });
 
     // Setup visualization mode selector buttons
     scopeButton.setClickingTogglesState(false);
@@ -337,7 +344,9 @@ void VizASynthAudioProcessorEditor::paint(juce::Graphics& g)
     int envPanelW = config.getLayoutInt("components.envelopePanel.width", 320);
     int envPanelH = config.getLayoutInt("components.envelopePanel.height", 230);
     int panelSpacing = config.getLayoutInt("components.panels.spacing", 22);
-    int oscY = config.getLayoutInt("components.oscillatorPanel.y", 80);
+    // Account for signal flow view at the top
+    int signalFlowHeight = config.getLayoutInt("layout.signalFlow.height", 60);
+    int oscY = 5 + signalFlowHeight + 10 + 5;  // margin + signalFlow + gap + panel margin
     int filterY = oscY + oscPanelH + panelSpacing;
     int envY = filterY + filterPanelH + panelSpacing;
     int leftPanelTitleYOffset = config.getLayoutInt("components.panels.titleYOffset", 6);
@@ -512,7 +521,18 @@ void VizASynthAudioProcessorEditor::resized()
 
     // --- Control panel area (left side) ---
     int panelX = leftPanelArea.getX();
-    int oscY = leftPanelArea.getY() + 70;
+
+    // Signal flow view at the top
+    int signalFlowHeight = config.getLayoutInt("layout.signalFlow.height", 60);
+    int signalFlowY = leftPanelArea.getY() + 5;
+    int signalFlowWidth = layout.oscPanelW;  // Match oscillator panel width
+    signalFlowView.setBounds(panelX + config.getLayoutInt("components.oscillatorPanel.x", 30) - panelX,
+                             signalFlowY,
+                             signalFlowWidth,
+                             signalFlowHeight);
+
+    // Adjust oscY to account for signal flow view
+    int oscY = signalFlowY + signalFlowHeight + 10;
     int filterY = oscY + layout.oscPanelH + layout.panelSpacing;
     int envY = filterY + layout.filterPanelH + layout.panelSpacing;
 
