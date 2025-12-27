@@ -71,12 +71,14 @@ private:
     struct SignalBlock {
         std::string name;           // Display name (e.g., "OSC", "FILTER")
         std::string processingType; // Type description (e.g., "Signal Generator")
+        std::string equation;       // Mathematical equation/description for this block
         ProbePoint probePoint;      // Associated probe point (legacy)
         std::string probeId;        // String-based probe ID (new flexible system)
         juce::Colour color;         // Block color
         juce::Rectangle<float> bounds;  // Rendered bounds (calculated in resized)
         bool isHovered = false;
         bool isSelectable = true;   // Whether this block can be clicked to select probe
+        bool showEquation = false;  // Whether to show equation tooltip for this block
     };
 
     /**
@@ -88,6 +90,11 @@ private:
      * Draw a single signal block.
      */
     void drawBlock(juce::Graphics& g, const SignalBlock& block, bool isSelected);
+
+    /**
+     * Draw equation tooltip for a block.
+     */
+    void drawEquationTooltip(juce::Graphics& g, const SignalBlock& block);
 
     /**
      * Draw an arrow between two blocks.
