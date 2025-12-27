@@ -74,6 +74,15 @@ public:
         onGraphModified = callback;
     }
 
+    /**
+     * Callback invoked when the close button is clicked.
+     * Signature: void callback()
+     */
+    using CloseCallback = std::function<void()>;
+    void setCloseCallback(CloseCallback callback) {
+        onClose = callback;
+    }
+
     //=========================================================================
     // Canvas Operations
     //=========================================================================
@@ -239,6 +248,7 @@ private:
         };
 
         std::vector<PaletteItem> items;
+        std::string draggedType;  // Type being dragged from palette
 
         void refreshItems();
     };
@@ -272,6 +282,7 @@ private:
 
     SignalGraph* currentGraph = nullptr;
     GraphModifiedCallback onGraphModified;
+    CloseCallback onClose;
 
     // Visual state
     std::vector<NodeVisual> nodeVisuals;
@@ -284,6 +295,10 @@ private:
     bool isReadOnly = false;
     bool showPalette = true;
     bool showProperties = true;
+
+    // Close button
+    juce::Rectangle<int> closeButtonBounds;
+    bool isCloseButtonHovered = false;
 
     // Layout
     juce::Rectangle<int> paletteArea;

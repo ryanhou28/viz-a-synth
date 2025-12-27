@@ -8,25 +8,28 @@
 #include "DSP/Filters/StateVariableFilterWrapper.h"
 #include "DSP/SignalChain.h"
 #include "Core/ChainConfiguration.h"
+#include "DSP/SignalGraph.h"
+#include "Core/ChainModificationManager.h"
 
 //==============================================================================
 /**
  * Synthesizer voice for Viz-A-Synth
  *
- * Uses a SignalChain to process audio through modular signal nodes:
- *   OSC -> FILTER -> (chain output) * ENVELOPE * velocity = final output
+ * Uses a SignalGraph to process audio through modular signal nodes:
+ *   OSC -> FILTER -> (graph output) * ENVELOPE * velocity = final output
  *
- * The envelope is kept separate from the chain as it's time-varying gain,
+ * The envelope is kept separate from the graph as it's time-varying gain,
  * not a Linear Time-Invariant (LTI) system like the filter.
  *
- * This architecture allows for future flexibility in chain configuration
- * (multiple oscillators, filters, etc.) while maintaining the simple
- * educational interface.
+ * This architecture allows for flexible graph configuration including
+ * parallel branches (multiple oscillators, filters, etc.) while maintaining
+ * the educational interface.
  *
- * Chain configuration can be:
- *   1. Default (hardcoded OSC->FILTER) - VizASynthVoice()
+ * Graph configuration can be:
+ *   1. Default (OSC->FILTER) - VizASynthVoice()
  *   2. From ChainConfiguration - VizASynthVoice(config)
  *   3. From JSON file - loadChainFromFile(path)
+ *   4. Runtime modification via ChainEditor
  */
 class VizASynthVoice : public juce::SynthesiserVoice
 {
@@ -68,22 +71,30 @@ public:
     vizasynth::PolyBLEPOscillator& getOscillator() { return *oscillator; }
     vizasynth::StateVariableFilterWrapper& getFilter() { return *filterNode; }
 
-    // Access to the signal chain (for future dynamic chain configuration)
-    vizasynth::SignalChain& getSignalChain() { return processingChain; }
-    const vizasynth::SignalChain& getSignalChain() const { return processingChain; }
+    // Access to the signal graph (for dynamic graph configuration)
+    vizasynth::SignalGraph& getSignalGraph() { return processingGraph; }
+    const vizasynth::SignalGraph& getSignalGraph() const { return processingGraph; }
+
+    // Legacy: kept for backward compatibility with existing visualizations
+    vizasynth::SignalChain& getSignalChain() { return legacyChain; }
+    const vizasynth::SignalChain& getSignalChain() const { return legacyChain; }
 
 private:
-    void initializeDefaultChain();
+    void initializeDefaultGraph();
+    void initializeDefaultChain();  // Legacy: for backward compatibility
     void applyEnvelopeConfig(const vizasynth::EnvelopeConfig& envConfig);
 
     // Chain configuration (stores the current config for serialization/inspection)
     vizasynth::ChainConfiguration chainConfig;
 
-    // Signal chain container (OSC -> FILTER)
-    vizasynth::SignalChain processingChain;
+    // Signal graph container (OSC -> FILTER with support for parallel branches)
+    vizasynth::SignalGraph processingGraph;
 
-    // Direct pointers to chain modules for parameter access
-    // These are owned by processingChain, we just keep pointers for convenience
+    // Legacy signal chain (kept for backward compatibility during migration)
+    vizasynth::SignalChain legacyChain;
+
+    // Direct pointers to graph modules for parameter access
+    // These are owned by processingGraph, we just keep pointers for convenience
     vizasynth::PolyBLEPOscillator* oscillator = nullptr;
     vizasynth::StateVariableFilterWrapper* filterNode = nullptr;
 
@@ -186,9 +197,24 @@ public:
     // This is a shared wrapper that mirrors the voice filter settings
     vizasynth::StateVariableFilterWrapper& getFilterWrapper() { return filterWrapper; }
 
+    // Phase 3.5: Signal chain editing integration
+    vizasynth::SignalGraph& getDemoGraph() { return demoGraph; }
+    vizasynth::SignalGraph* getVoiceGraph() {
+        // Return the first voice's signal graph for editing
+        if (auto* voice = getVoice(0)) {
+            return &voice->getSignalGraph();
+        }
+        return nullptr;
+    }
+    vizasynth::ChainModificationManager& getModificationManager() { return modificationManager; }
+
 private:
     // Filter wrapper for visualization (mirrors voice filter settings)
     vizasynth::StateVariableFilterWrapper filterWrapper;
+
+    // Phase 3.5: Demo signal graph for ChainEditor testing
+    vizasynth::SignalGraph demoGraph;
+    vizasynth::ChainModificationManager modificationManager;
     //==============================================================================
     juce::Synthesiser synth;
     juce::AudioProcessorValueTreeState apvts;
@@ -210,6 +236,7 @@ private:
     void updateVoiceParameters();
     void applyChainConfigToAPVTS(const vizasynth::ChainConfiguration& config);
     bool isAnyNoteActive() const;
+    void initializeDemoGraph();  // Phase 3.5: Initialize demo graph with sample nodes
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VizASynthAudioProcessor)
 };

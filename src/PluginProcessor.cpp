@@ -12,7 +12,8 @@ VizASynthVoice::VizASynthVoice()
 {
     // Use default configuration
     chainConfig = ChainConfiguration::createDefault();
-    initializeDefaultChain();
+    initializeDefaultGraph();
+    initializeDefaultChain();  // Legacy: for backward compatibility
 }
 
 VizASynthVoice::VizASynthVoice(const ChainConfiguration& config)
@@ -20,30 +21,53 @@ VizASynthVoice::VizASynthVoice(const ChainConfiguration& config)
     loadChainFromConfig(config);
 }
 
-void VizASynthVoice::initializeDefaultChain()
+void VizASynthVoice::initializeDefaultGraph()
 {
-    // Build the signal chain: OSC -> FILTER
-    // Create oscillator module
-    auto oscModule = std::make_unique<PolyBLEPOscillator>();
-    oscModule->setWaveform(OscillatorWaveform::Sine);
-    oscillator = oscModule.get();  // Keep pointer before move
-    processingChain.addModule(std::move(oscModule), "osc1");
+    // Build the signal graph: OSC -> FILTER
+    // Create oscillator node
+    auto oscNode = std::make_unique<PolyBLEPOscillator>();
+    oscNode->setWaveform(OscillatorWaveform::Sine);
+    oscillator = oscNode.get();  // Keep pointer before move
+    processingGraph.addNode(std::move(oscNode), "osc1");
 
-    // Create filter module
+    // Create filter node
     auto filterModule = std::make_unique<StateVariableFilterWrapper>();
     filterModule->setType(FilterNode::Type::LowPass);
     filterNode = filterModule.get();  // Keep pointer before move
-    processingChain.addModule(std::move(filterModule), "filter1");
+    processingGraph.addNode(std::move(filterModule), "filter1");
 
-    // Set chain name for identification
-    processingChain.setName("VoiceChain");
+    // Connect OSC -> FILTER
+    processingGraph.connect("osc1", "filter1");
 
-    // Default ADSR parameters (envelope is separate from chain)
+    // Set filter1 as the output node
+    processingGraph.setOutputNode("filter1");
+
+    // Set graph name for identification
+    processingGraph.setName("VoiceGraph");
+
+    // Default ADSR parameters (envelope is separate from graph)
     adsrParams.attack = 0.1f;
     adsrParams.decay = 0.1f;
     adsrParams.sustain = 0.8f;
     adsrParams.release = 0.3f;
     adsr.setParameters(adsrParams);
+}
+
+void VizASynthVoice::initializeDefaultChain()
+{
+    // Build the legacy signal chain: OSC -> FILTER
+    // This is kept for backward compatibility with existing visualizations
+    auto oscModule = std::make_unique<PolyBLEPOscillator>();
+    oscModule->setWaveform(OscillatorWaveform::Sine);
+    legacyChain.addModule(std::move(oscModule), "osc1");
+
+    // Create filter module
+    auto filterModule = std::make_unique<StateVariableFilterWrapper>();
+    filterModule->setType(FilterNode::Type::LowPass);
+    legacyChain.addModule(std::move(filterModule), "filter1");
+
+    // Set chain name for identification
+    legacyChain.setName("VoiceChain");
 }
 
 bool VizASynthVoice::loadChainFromFile(const juce::File& file)
@@ -59,12 +83,17 @@ bool VizASynthVoice::loadChainFromConfig(const ChainConfiguration& config)
 {
     chainConfig = config;
 
-    // Apply chain configuration
-    if (!chainConfig.applyToChain(processingChain, &oscillator, &filterNode)) {
+    // Apply configuration to legacy chain for backward compatibility
+    if (!chainConfig.applyToChain(legacyChain, &oscillator, &filterNode)) {
         // Fallback to default if config fails
+        initializeDefaultGraph();
         initializeDefaultChain();
         return false;
     }
+
+    // TODO: Also build the graph from configuration
+    // For now, use default graph structure
+    initializeDefaultGraph();
 
     // Apply envelope configuration
     applyEnvelopeConfig(chainConfig.getEnvelopeConfig());
@@ -135,26 +164,25 @@ void VizASynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
     ProbePoint activeProbePoint = shouldProbe ? probeManager->getActiveProbe() : ProbePoint::Output;
 
     // Process sample by sample to enable probing at different points
-    // The signal chain handles OSC -> FILTER processing
-    // We apply envelope after (it's time-varying gain, not part of chain)
+    // The signal graph handles OSC -> FILTER processing
+    // We apply envelope after (it's time-varying gain, not part of graph)
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        // Get oscillator output for probing (before chain processing)
-        // We need to probe at oscillator output, which is between osc and filter
-        float oscOut = oscillator->processSample();
+        // Process through the signal graph (OSC -> FILTER chain)
+        // The graph's process() method handles the entire chain
+        float graphOut = processingGraph.process(0.0f);  // 0.0f input (oscillator generates signal)
 
-        // Probe oscillator output
-        if (shouldProbe && activeProbePoint == ProbePoint::Oscillator)
-            probeManager->getProbeBuffer().push(oscOut);
+        // For backward compatibility, also update legacy probes manually
+        // TODO: Remove this once visualizations migrate to graph probe buffers
+        if (shouldProbe)
+        {
+            if (activeProbePoint == ProbePoint::Oscillator && oscillator != nullptr)
+                probeManager->getProbeBuffer().push(oscillator->getLastOutput());
+            else if (activeProbePoint == ProbePoint::PostFilter)
+                probeManager->getProbeBuffer().push(graphOut);
+        }
 
-        // Apply filter (part of chain, but we process manually for probe access)
-        float filtered = filterNode->process(oscOut);
-
-        // Probe post-filter (chain output before envelope)
-        if (shouldProbe && activeProbePoint == ProbePoint::PostFilter)
-            probeManager->getProbeBuffer().push(filtered);
-
-        // Apply envelope (separate from chain - time-varying gain)
+        // Apply envelope (separate from graph - time-varying gain)
         float env = adsr.getNextSample();
 
         if (!adsr.isActive())
@@ -163,7 +191,7 @@ void VizASynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
             return;
         }
 
-        float finalOut = filtered * env * velocity;
+        float finalOut = graphOut * env * velocity;
 
         // Probe final output
         if (shouldProbe && activeProbePoint == ProbePoint::Output)
@@ -179,10 +207,13 @@ void VizASynthVoice::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
 
-    // Prepare the signal chain (prepares all modules)
-    processingChain.prepare(sampleRate, samplesPerBlock);
+    // Prepare the signal graph (prepares all nodes)
+    processingGraph.prepare(sampleRate, samplesPerBlock);
 
-    // Prepare envelope (separate from chain)
+    // Prepare legacy chain for backward compatibility
+    legacyChain.prepare(sampleRate, samplesPerBlock);
+
+    // Prepare envelope (separate from graph)
     adsr.setSampleRate(sampleRate);
 }
 
@@ -335,6 +366,13 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
                                 &probeManager.getMixProbeBuffer(),
                                 juce::Colour(0xffb088f9),  // Purple
                                 1000);  // High order index (appears last)
+
+    // Phase 3.5: Initialize demo signal graph and modification manager
+    initializeDemoGraph();
+    modificationManager.setGraph(&demoGraph);
+    modificationManager.setVoiceStopCallback([this]() {
+        synth.allNotesOff(0, true);  // Stop all voices before structural modifications (0 = all channels)
+    });
 }
 
 VizASynthAudioProcessor::~VizASynthAudioProcessor()
@@ -650,6 +688,9 @@ void VizASynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // Clear output buffer
     buffer.clear();
 
+    // Phase 3.5: Process pending graph modifications BEFORE audio processing
+    modificationManager.processPendingModifications();
+
     // Update voice parameters
     updateVoiceParameters();
 
@@ -708,6 +749,36 @@ bool VizASynthAudioProcessor::isAnyNoteActive() const
         }
     }
     return false;
+}
+
+//==============================================================================
+// Phase 3.5: Initialize demo signal graph with sample nodes
+void VizASynthAudioProcessor::initializeDemoGraph()
+{
+    // Create a simple demo graph: OSC -> FILTER -> Output
+    // This allows the ChainEditor UI to be tested without affecting audio
+
+    auto osc1 = std::make_unique<PolyBLEPOscillator>();
+    osc1->setWaveform(OscillatorWaveform::Sine);
+    demoGraph.addNode(std::move(osc1), "osc1");
+
+    auto filter1 = std::make_unique<StateVariableFilterWrapper>();
+    filter1->setType(FilterNode::Type::LowPass);
+    filter1->setCutoff(1000.0f);
+    demoGraph.addNode(std::move(filter1), "filter1");
+
+    // Connect OSC -> FILTER
+    demoGraph.connect("osc1", "filter1");
+
+    // Set filter1 as the output node
+    demoGraph.setOutputNode("filter1");
+
+    // Set the graph name
+    demoGraph.setName("DemoGraph");
+
+    #if JUCE_DEBUG
+    juce::Logger::writeToLog("[Phase 3.5] Demo graph initialized with osc1 -> filter1");
+    #endif
 }
 
 //==============================================================================

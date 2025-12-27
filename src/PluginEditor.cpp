@@ -275,6 +275,32 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     addAndMakeVisible(chainEditorButton);
 
     // Setup chain editor (initially hidden)
+    // Phase 3.5 Option B: Connect to voice graph for full integration
+    if (auto* voiceGraph = audioProcessor.getVoiceGraph()) {
+        chainEditor.setGraph(voiceGraph);
+        chainEditor.setGraphModifiedCallback([this](vizasynth::SignalGraph* graph) {
+            #if JUCE_DEBUG
+            juce::Logger::writeToLog("[Phase 3.5 Full Integration] Voice graph modified via ChainEditor");
+            #endif
+            // Graph modifications will affect audio output!
+            // Modifications are thread-safe via ChainModificationManager
+        });
+    } else {
+        // Fallback to demo graph if voice not available
+        chainEditor.setGraph(&audioProcessor.getDemoGraph());
+        #if JUCE_DEBUG
+        juce::Logger::writeToLog("[Phase 3.5] Fallback: Using demo graph (voice not ready)");
+        #endif
+    }
+
+    // Set close callback to hide the chain editor
+    chainEditor.setCloseCallback([this]() {
+        showChainEditor = false;
+        chainEditor.setVisible(false);
+        chainEditorButton.setToggleState(false, juce::dontSendNotification);
+        resized();
+    });
+
     chainEditor.setVisible(false);
     addAndMakeVisible(chainEditor);
 

@@ -213,6 +213,13 @@ void ChainEditor::paint(juce::Graphics& g)
     // Background
     g.fillAll(juce::Colour(0xff2b2b2b));
 
+    // Draw close button at top-left
+    g.setColour(isCloseButtonHovered ? juce::Colours::red.brighter(0.3f) : juce::Colours::darkgrey);
+    g.fillRoundedRectangle(closeButtonBounds.toFloat(), 4.0f);
+    g.setColour(juce::Colours::white);
+    g.setFont(16.0f);
+    g.drawText("X", closeButtonBounds, juce::Justification::centred);
+
     // Canvas background
     g.setColour(juce::Colour(0xff1e1e1e));
     g.fillRect(canvasArea);
@@ -239,8 +246,12 @@ void ChainEditor::paint(juce::Graphics& g)
                                             return n.id == dragState.nodeId;
                                         });
         if (sourceNode != nodeVisuals.end()) {
-            juce::Point<float> start = getNodeOutputPort(*sourceNode);
-            drawConnectionCurve(g, start, dragState.currentPos,
+            auto offset = canvasArea.getTopLeft().toFloat();
+            // Get port in canvas coordinates, then offset to screen coordinates
+            juce::Point<float> start = getNodeOutputPort(*sourceNode).translated(offset.x, offset.y);
+            // dragState.currentPos is in canvas coordinates, so offset to screen
+            juce::Point<float> end = dragState.currentPos.translated(offset.x, offset.y);
+            drawConnectionCurve(g, start, end,
                                 juce::Colours::yellow.withAlpha(0.5f), true);
         }
     }
@@ -264,6 +275,9 @@ void ChainEditor::resized()
 {
     auto bounds = getLocalBounds();
 
+    // Close button at top-left (30x30 with 10px padding)
+    closeButtonBounds = bounds.removeFromTop(40).removeFromLeft(40).reduced(5);
+
     // Layout: [Palette] | [Canvas] | [Properties]
     int paletteW = showPalette ? paletteWidth : 0;
     int propsW = showProperties ? propertiesWidth : 0;
@@ -282,6 +296,14 @@ void ChainEditor::resized()
 
 void ChainEditor::mouseDown(const juce::MouseEvent& event)
 {
+    // Check if clicking close button
+    if (closeButtonBounds.contains(event.getPosition().toInt())) {
+        if (onClose) {
+            onClose();
+        }
+        return;
+    }
+
     if (isReadOnly) {
         return;
     }
@@ -377,6 +399,10 @@ void ChainEditor::mouseUp(const juce::MouseEvent& event)
 
 void ChainEditor::mouseMove(const juce::MouseEvent& event)
 {
+    // Update close button hover state
+    bool wasHovered = isCloseButtonHovered;
+    isCloseButtonHovered = closeButtonBounds.contains(event.getPosition().toInt());
+
     auto canvasPos = event.position - canvasArea.getTopLeft().toFloat();
 
     // Update hover state
@@ -392,6 +418,8 @@ void ChainEditor::mouseMove(const juce::MouseEvent& event)
             n.isHovered = (n.id == newHoveredId);
         }
         hoveredNodeId = newHoveredId;
+        repaint();
+    } else if (wasHovered != isCloseButtonHovered) {
         repaint();
     }
 }
@@ -483,12 +511,16 @@ ChainEditor::ConnectionVisual* ChainEditor::findConnectionAt(juce::Point<float> 
 
 juce::Point<float> ChainEditor::getNodeInputPort(const NodeVisual& node) const
 {
-    return node.bounds.getCentre().translated(-node.bounds.getWidth() / 2, 0);
+    // Return port position in canvas coordinates (not screen coordinates)
+    // Left edge, vertically centered
+    return juce::Point<float>(node.bounds.getX(), node.bounds.getCentreY());
 }
 
 juce::Point<float> ChainEditor::getNodeOutputPort(const NodeVisual& node) const
 {
-    return node.bounds.getCentre().translated(node.bounds.getWidth() / 2, 0);
+    // Return port position in canvas coordinates (not screen coordinates)
+    // Right edge, vertically centered
+    return juce::Point<float>(node.bounds.getRight(), node.bounds.getCentreY());
 }
 
 void ChainEditor::drawNode(juce::Graphics& g, const NodeVisual& node)
@@ -637,14 +669,42 @@ void ChainEditor::ModulePalette::resized()
 
 void ChainEditor::ModulePalette::mouseDown(const juce::MouseEvent& event)
 {
-    // TODO: Start drag from palette
-    (void)event;
+    // Check which item was clicked
+    for (const auto& item : items) {
+        if (item.bounds.contains(event.getPosition())) {
+            // Store which item is being dragged
+            draggedType = item.type;
+            return;
+        }
+    }
+    draggedType.clear();
 }
 
 void ChainEditor::ModulePalette::mouseDrag(const juce::MouseEvent& event)
 {
-    // TODO: Continue drag
-    (void)event;
+    if (draggedType.empty()) {
+        return;
+    }
+
+    // If we've dragged far enough, start creating a node on the canvas
+    if (!event.mouseWasDraggedSinceMouseDown() || event.getDistanceFromDragStart() < 10) {
+        return;
+    }
+
+    // Convert to owner's (ChainEditor) coordinates
+    auto canvasPos = owner.getLocalPoint(this, event.getPosition());
+
+    // Check if we're over the canvas area
+    if (owner.canvasArea.contains(canvasPos.toInt())) {
+        // Convert to canvas coordinates (relative to canvas area)
+        auto nodePos = (canvasPos - owner.canvasArea.getTopLeft()).toFloat();
+
+        // Create the node at this position
+        owner.addNode(draggedType, nodePos);
+
+        // Clear dragged type so we don't create multiple nodes
+        draggedType.clear();
+    }
 }
 
 void ChainEditor::ModulePalette::refreshItems()
