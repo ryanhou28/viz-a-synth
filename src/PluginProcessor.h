@@ -5,15 +5,36 @@
 #include "Visualization/ProbeBuffer.h"
 #include "DSP/Oscillators/PolyBLEPOscillator.h"
 #include "DSP/Filters/StateVariableFilterWrapper.h"
+#include "DSP/SignalChain.h"
+#include "Core/ChainConfiguration.h"
 
 //==============================================================================
 /**
- * Simple synthesizer voice for Viz-A-Synth
+ * Synthesizer voice for Viz-A-Synth
+ *
+ * Uses a SignalChain to process audio through modular signal nodes:
+ *   OSC -> FILTER -> (chain output) * ENVELOPE * velocity = final output
+ *
+ * The envelope is kept separate from the chain as it's time-varying gain,
+ * not a Linear Time-Invariant (LTI) system like the filter.
+ *
+ * This architecture allows for future flexibility in chain configuration
+ * (multiple oscillators, filters, etc.) while maintaining the simple
+ * educational interface.
+ *
+ * Chain configuration can be:
+ *   1. Default (hardcoded OSC->FILTER) - VizASynthVoice()
+ *   2. From ChainConfiguration - VizASynthVoice(config)
+ *   3. From JSON file - loadChainFromFile(path)
  */
 class VizASynthVoice : public juce::SynthesiserVoice
 {
 public:
+    /** Default constructor - creates standard OSC->FILTER chain */
     VizASynthVoice();
+
+    /** Construct from configuration */
+    explicit VizASynthVoice(const vizasynth::ChainConfiguration& config);
 
     bool canPlaySound(juce::SynthesiserSound*) override;
     void startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound*, int currentPitchWheelPosition) override;
@@ -23,6 +44,11 @@ public:
     void renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples) override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock);
+
+    // Chain configuration
+    bool loadChainFromFile(const juce::File& file);
+    bool loadChainFromConfig(const vizasynth::ChainConfiguration& config);
+    const vizasynth::ChainConfiguration& getChainConfiguration() const { return chainConfig; }
 
     // Parameter setters
     void setOscillatorType(int type);
@@ -37,11 +63,30 @@ public:
     void setVoiceIndex(int index) { voiceIndex = index; }
     int getVoiceIndex() const { return voiceIndex; }
 
-    vizasynth::PolyBLEPOscillator& getOscillator() { return oscillator; }
+    // Access to chain modules for visualization
+    vizasynth::PolyBLEPOscillator& getOscillator() { return *oscillator; }
+    vizasynth::StateVariableFilterWrapper& getFilter() { return *filterNode; }
+
+    // Access to the signal chain (for future dynamic chain configuration)
+    vizasynth::SignalChain& getSignalChain() { return processingChain; }
+    const vizasynth::SignalChain& getSignalChain() const { return processingChain; }
 
 private:
-    vizasynth::PolyBLEPOscillator oscillator;
-    juce::dsp::StateVariableTPTFilter<float> filter;
+    void initializeDefaultChain();
+    void applyEnvelopeConfig(const vizasynth::EnvelopeConfig& envConfig);
+
+    // Chain configuration (stores the current config for serialization/inspection)
+    vizasynth::ChainConfiguration chainConfig;
+
+    // Signal chain container (OSC -> FILTER)
+    vizasynth::SignalChain processingChain;
+
+    // Direct pointers to chain modules for parameter access
+    // These are owned by processingChain, we just keep pointers for convenience
+    vizasynth::PolyBLEPOscillator* oscillator = nullptr;
+    vizasynth::StateVariableFilterWrapper* filterNode = nullptr;
+
+    // Envelope (kept separate from chain - time-varying gain)
     juce::ADSR adsr;
     juce::ADSR::Parameters adsrParams;
 
@@ -160,6 +205,7 @@ private:
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void updateVoiceParameters();
+    void applyChainConfigToAPVTS(const vizasynth::ChainConfiguration& config);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VizASynthAudioProcessor)
 };

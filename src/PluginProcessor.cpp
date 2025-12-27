@@ -10,17 +10,74 @@ using namespace vizasynth;
 
 VizASynthVoice::VizASynthVoice()
 {
-    // Initialize oscillator with sine wave
-    oscillator.setWaveform(OscillatorWaveform::Sine);
+    // Use default configuration
+    chainConfig = ChainConfiguration::createDefault();
+    initializeDefaultChain();
+}
 
-    // Initialize filter as low-pass
-    filter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+VizASynthVoice::VizASynthVoice(const ChainConfiguration& config)
+{
+    loadChainFromConfig(config);
+}
 
-    // Default ADSR parameters
+void VizASynthVoice::initializeDefaultChain()
+{
+    // Build the signal chain: OSC -> FILTER
+    // Create oscillator module
+    auto oscModule = std::make_unique<PolyBLEPOscillator>();
+    oscModule->setWaveform(OscillatorWaveform::Sine);
+    oscillator = oscModule.get();  // Keep pointer before move
+    processingChain.addModule(std::move(oscModule), "osc1");
+
+    // Create filter module
+    auto filterModule = std::make_unique<StateVariableFilterWrapper>();
+    filterModule->setType(FilterNode::Type::LowPass);
+    filterNode = filterModule.get();  // Keep pointer before move
+    processingChain.addModule(std::move(filterModule), "filter1");
+
+    // Set chain name for identification
+    processingChain.setName("VoiceChain");
+
+    // Default ADSR parameters (envelope is separate from chain)
     adsrParams.attack = 0.1f;
     adsrParams.decay = 0.1f;
     adsrParams.sustain = 0.8f;
     adsrParams.release = 0.3f;
+    adsr.setParameters(adsrParams);
+}
+
+bool VizASynthVoice::loadChainFromFile(const juce::File& file)
+{
+    ChainConfiguration config;
+    if (!config.loadFromFile(file)) {
+        return false;
+    }
+    return loadChainFromConfig(config);
+}
+
+bool VizASynthVoice::loadChainFromConfig(const ChainConfiguration& config)
+{
+    chainConfig = config;
+
+    // Apply chain configuration
+    if (!chainConfig.applyToChain(processingChain, &oscillator, &filterNode)) {
+        // Fallback to default if config fails
+        initializeDefaultChain();
+        return false;
+    }
+
+    // Apply envelope configuration
+    applyEnvelopeConfig(chainConfig.getEnvelopeConfig());
+
+    return true;
+}
+
+void VizASynthVoice::applyEnvelopeConfig(const EnvelopeConfig& envConfig)
+{
+    adsrParams.attack = envConfig.attack;
+    adsrParams.decay = envConfig.decay;
+    adsrParams.sustain = envConfig.sustain;
+    adsrParams.release = envConfig.release;
     adsr.setParameters(adsrParams);
 }
 
@@ -36,7 +93,8 @@ void VizASynthVoice::startNote(int midiNoteNumber, float vel, juce::SynthesiserS
 
     // Set oscillator frequency
     auto frequency = juce::MidiMessage::getMidiNoteInHertz(midiNoteNumber);
-    oscillator.setFrequency(frequency);
+    if (oscillator != nullptr)
+        oscillator->setFrequency(frequency);
 
     // Start envelope
     adsr.noteOn();
@@ -77,23 +135,26 @@ void VizASynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
     ProbePoint activeProbePoint = shouldProbe ? probeManager->getActiveProbe() : ProbePoint::Output;
 
     // Process sample by sample to enable probing at different points
+    // The signal chain handles OSC -> FILTER processing
+    // We apply envelope after (it's time-varying gain, not part of chain)
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        // Generate oscillator sample
-        float oscOut = oscillator.processSample();
+        // Get oscillator output for probing (before chain processing)
+        // We need to probe at oscillator output, which is between osc and filter
+        float oscOut = oscillator->processSample();
 
         // Probe oscillator output
         if (shouldProbe && activeProbePoint == ProbePoint::Oscillator)
             probeManager->getProbeBuffer().push(oscOut);
 
-        // Apply filter
-        float filtered = filter.processSample(0, oscOut);
+        // Apply filter (part of chain, but we process manually for probe access)
+        float filtered = filterNode->process(oscOut);
 
-        // Probe post-filter
+        // Probe post-filter (chain output before envelope)
         if (shouldProbe && activeProbePoint == ProbePoint::PostFilter)
             probeManager->getProbeBuffer().push(filtered);
 
-        // Apply envelope
+        // Apply envelope (separate from chain - time-varying gain)
         float env = adsr.getNextSample();
 
         if (!adsr.isActive())
@@ -118,30 +179,27 @@ void VizASynthVoice::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
 
-    juce::dsp::ProcessSpec spec;
-    spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = samplesPerBlock;
-    spec.numChannels = 1;
+    // Prepare the signal chain (prepares all modules)
+    processingChain.prepare(sampleRate, samplesPerBlock);
 
-    oscillator.prepare(sampleRate, samplesPerBlock);
-    filter.prepare(spec);
-    filter.reset();
-
+    // Prepare envelope (separate from chain)
     adsr.setSampleRate(sampleRate);
 }
 
 void VizASynthVoice::setOscillatorType(int type)
 {
+    if (oscillator == nullptr) return;
+
     switch (type)
     {
         case 0: // Sine
-            oscillator.setWaveform(OscillatorWaveform::Sine);
+            oscillator->setWaveform(OscillatorWaveform::Sine);
             break;
         case 1: // Saw (PolyBLEP anti-aliased)
-            oscillator.setWaveform(OscillatorWaveform::Saw);
+            oscillator->setWaveform(OscillatorWaveform::Saw);
             break;
         case 2: // Square (PolyBLEP anti-aliased)
-            oscillator.setWaveform(OscillatorWaveform::Square);
+            oscillator->setWaveform(OscillatorWaveform::Square);
             break;
         default:
             break;
@@ -150,40 +208,44 @@ void VizASynthVoice::setOscillatorType(int type)
 
 void VizASynthVoice::setBandLimited(bool enabled)
 {
-    oscillator.setBandLimited(enabled);
+    if (oscillator != nullptr)
+        oscillator->setBandLimited(enabled);
 }
 
 void VizASynthVoice::setFilterType(int type)
 {
+    if (filterNode == nullptr) return;
+
     switch (type)
     {
         case 0: // Lowpass
-            filter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+            filterNode->setType(vizasynth::FilterNode::Type::LowPass);
             break;
         case 1: // Highpass
-            filter.setType(juce::dsp::StateVariableTPTFilterType::highpass);
+            filterNode->setType(vizasynth::FilterNode::Type::HighPass);
             break;
         case 2: // Bandpass
-            filter.setType(juce::dsp::StateVariableTPTFilterType::bandpass);
+            filterNode->setType(vizasynth::FilterNode::Type::BandPass);
             break;
-        case 3: // Notch - JUCE SVF doesn't have notch, use lowpass as fallback
-            // Note: For a proper notch, we'd need a different filter implementation
-            filter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+        case 3: // Notch
+            filterNode->setType(vizasynth::FilterNode::Type::Notch);
             break;
         default:
-            filter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+            filterNode->setType(vizasynth::FilterNode::Type::LowPass);
             break;
     }
 }
 
 void VizASynthVoice::setFilterCutoff(float cutoff)
 {
-    filter.setCutoffFrequency(cutoff);
+    if (filterNode != nullptr)
+        filterNode->setCutoff(cutoff);
 }
 
 void VizASynthVoice::setFilterResonance(float resonance)
 {
-    filter.setResonance(resonance);
+    if (filterNode != nullptr)
+        filterNode->setResonance(resonance);
 }
 
 void VizASynthVoice::setADSR(float attack, float decay, float sustain, float release)
@@ -209,9 +271,9 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
     auto configDir = executableDir.getChildFile("config");
 
     // Search up the directory tree to find the config folder
-    if (!configDir.exists()) {
+    if (!configDir.exists() || !configDir.getChildFile("theme.json").exists()) {
         auto searchDir = executableDir;
-        for (int i = 0; i < 6; ++i) {  // Search up to 6 levels
+        for (int i = 0; i < 10; ++i) {  // Search up to 10 levels (app bundles are deep)
             searchDir = searchDir.getParentDirectory();
             auto candidate = searchDir.getChildFile("config");
             if (candidate.exists() && candidate.getChildFile("theme.json").exists()) {
@@ -229,10 +291,23 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
     ConfigurationManager::getInstance().enableFileWatching(configDir);
 #endif
 
-    // Add voices to synthesizer
+    // Load chain configuration from JSON file
+    ChainConfiguration chainConfig;
+    auto chainConfigFile = configDir.getChildFile("default-chain.json");
+
+    if (chainConfigFile.existsAsFile()) {
+        chainConfig.loadFromFile(chainConfigFile);
+    } else {
+        chainConfig = ChainConfiguration::createDefault();
+    }
+
+    // Apply chain config to APVTS so UI reflects the loaded configuration
+    applyChainConfigToAPVTS(chainConfig);
+
+    // Add voices to synthesizer with loaded configuration
     for (int i = 0; i < 8; ++i)
     {
-        auto* voice = new VizASynthVoice();
+        auto* voice = new VizASynthVoice(chainConfig);
         voice->setVoiceIndex(i);
         voice->setProbeManager(&probeManager);
         synth.addVoice(voice);
@@ -345,6 +420,94 @@ void VizASynthAudioProcessor::updateVoiceParameters()
     filterWrapper.setType(wrapperFilterType);
     filterWrapper.setCutoff(cutoff);
     filterWrapper.setResonance(resonance);
+}
+
+void VizASynthAudioProcessor::applyChainConfigToAPVTS(const ChainConfiguration& config)
+{
+    // Sync APVTS parameters with chain configuration values
+    // This ensures the UI reflects the loaded configuration
+
+    for (const auto& module : config.getModules()) {
+        if (module.type == "oscillator" || module.type == "osc") {
+            // Set oscillator waveform
+            auto wfIt = module.parameters.find("waveform");
+            if (wfIt != module.parameters.end()) {
+                juce::String waveform = wfIt->second.toString().toLowerCase();
+                int oscTypeValue = 0;  // Default: sine
+                if (waveform == "sine" || waveform == "sin") oscTypeValue = 0;
+                else if (waveform == "saw" || waveform == "sawtooth") oscTypeValue = 1;
+                else if (waveform == "square" || waveform == "sq") oscTypeValue = 2;
+
+                // For AudioParameterChoice, normalized value = index / (numChoices - 1)
+                // oscType has 3 choices (0=Sine, 1=Saw, 2=Square), so divide by 2
+                if (auto* param = apvts.getParameter("oscType")) {
+                    float normalizedValue = static_cast<float>(oscTypeValue) / 2.0f;
+                    param->setValueNotifyingHost(normalizedValue);
+                }
+            }
+
+            // Set band-limiting
+            auto blIt = module.parameters.find("bandLimited");
+            if (blIt != module.parameters.end()) {
+                bool bandLimited = static_cast<bool>(blIt->second);
+                if (auto* param = apvts.getParameter("bandLimited")) {
+                    param->setValueNotifyingHost(bandLimited ? 1.0f : 0.0f);
+                }
+            }
+        }
+        else if (module.type == "filter" || module.type == "svf") {
+            // Set filter type
+            auto typeIt = module.parameters.find("type");
+            if (typeIt != module.parameters.end()) {
+                juce::String filterType = typeIt->second.toString().toLowerCase();
+                int filterTypeValue = 0;  // Default: lowpass
+                if (filterType == "lowpass" || filterType == "lp" || filterType == "low") filterTypeValue = 0;
+                else if (filterType == "highpass" || filterType == "hp" || filterType == "high") filterTypeValue = 1;
+                else if (filterType == "bandpass" || filterType == "bp" || filterType == "band") filterTypeValue = 2;
+                else if (filterType == "notch" || filterType == "n") filterTypeValue = 3;
+
+                // For AudioParameterChoice, normalized value = index / (numChoices - 1)
+                // filterType has 4 choices, so divide by 3
+                if (auto* param = apvts.getParameter("filterType")) {
+                    float normalizedValue = static_cast<float>(filterTypeValue) / 3.0f;
+                    param->setValueNotifyingHost(normalizedValue);
+                }
+            }
+
+            // Set cutoff
+            auto cutoffIt = module.parameters.find("cutoff");
+            if (cutoffIt != module.parameters.end()) {
+                float cutoff = static_cast<float>(cutoffIt->second);
+                if (auto* param = apvts.getParameter("cutoff")) {
+                    param->setValueNotifyingHost(param->convertTo0to1(cutoff));
+                }
+            }
+
+            // Set resonance
+            auto resIt = module.parameters.find("resonance");
+            if (resIt != module.parameters.end()) {
+                float resonance = static_cast<float>(resIt->second);
+                if (auto* param = apvts.getParameter("resonance")) {
+                    param->setValueNotifyingHost(param->convertTo0to1(resonance));
+                }
+            }
+        }
+    }
+
+    // Apply envelope config
+    const auto& env = config.getEnvelopeConfig();
+    if (auto* param = apvts.getParameter("attack")) {
+        param->setValueNotifyingHost(param->convertTo0to1(env.attack));
+    }
+    if (auto* param = apvts.getParameter("decay")) {
+        param->setValueNotifyingHost(param->convertTo0to1(env.decay));
+    }
+    if (auto* param = apvts.getParameter("sustain")) {
+        param->setValueNotifyingHost(param->convertTo0to1(env.sustain));
+    }
+    if (auto* param = apvts.getParameter("release")) {
+        param->setValueNotifyingHost(param->convertTo0to1(env.release));
+    }
 }
 
 //==============================================================================
@@ -526,9 +689,11 @@ void VizASynthAudioProcessor::setStateInformation(const void* data, int sizeInBy
 {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
 
-    if (xmlState.get() != nullptr)
-        if (xmlState->hasTagName(apvts.state.getType()))
+    if (xmlState.get() != nullptr) {
+        if (xmlState->hasTagName(apvts.state.getType())) {
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        }
+    }
 }
 
 //==============================================================================

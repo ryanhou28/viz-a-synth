@@ -1,0 +1,32 @@
+{
+  "name": "Default Chain",
+  "description": "Standard OSC->FILTER chain. This is the default signal chain matching the original synth behavior.",
+  "chain": [
+    {
+      "type": "oscillator",
+      "id": "osc1",
+      "subtype": "polyblep",
+      "params": {
+        "waveform": "sine",
+        "bandLimited": true
+      }
+    },
+    {
+      "type": "filter",
+      "id": "filter1",
+      "subtype": "svf",
+      "params": {
+        "type": "lowpass",
+        "cutoff": 1000,
+        "resonance": 0.707
+      }
+    }
+  ],
+  "envelope": {
+    "type": "adsr",
+    "attack": 0.1,
+    "decay": 0.1,
+    "sustain": 0.8,
+    "release": 0.3
+  }
+}
