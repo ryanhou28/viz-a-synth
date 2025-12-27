@@ -325,6 +325,9 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
     if (auto* voice0 = getVoice(0)) {
         voice0->getSignalChain().setProbeRegistry(&probeRegistry);
         voice0->getSignalChain().registerAllProbesWithRegistry();
+
+        // CRITICAL: Enable probing so probe buffers are filled during processing
+        voice0->getSignalChain().setProbingEnabled(true);
     }
 
     // Register the mix output probe (sum of all voices)

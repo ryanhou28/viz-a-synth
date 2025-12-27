@@ -1,0 +1,755 @@
+#include "ChainEditor.h"
+#include <algorithm>
+
+namespace vizasynth {
+
+//=============================================================================
+// ChainEditor Implementation
+//=============================================================================
+
+ChainEditor::ChainEditor()
+{
+    palette = std::make_unique<ModulePalette>(*this);
+    propertiesPanel = std::make_unique<PropertiesPanel>(*this);
+
+    addAndMakeVisible(palette.get());
+    addAndMakeVisible(propertiesPanel.get());
+
+    setWantsKeyboardFocus(true);
+}
+
+void ChainEditor::setGraph(SignalGraph* graph)
+{
+    currentGraph = graph;
+    rebuildVisualsFromGraph();
+    repaint();
+}
+
+std::string ChainEditor::addNode(const std::string& moduleType, juce::Point<float> position)
+{
+    if (!currentGraph || isReadOnly) {
+        return "";
+    }
+
+    // Create the node via factory
+    auto node = SignalNodeFactory::create(moduleType);
+    if (!node) {
+        return "";
+    }
+
+    // Generate unique ID
+    std::string nodeId = generateNodeId(moduleType);
+
+    // Determine number of inputs based on type
+    int numInputs = 1;
+    if (moduleType == "mixer") {
+        numInputs = 2;  // Mixers have multiple inputs
+    }
+
+    // Add to graph
+    currentGraph->addNode(std::move(node), nodeId, numInputs);
+
+    // Create visual
+    NodeVisual visual;
+    visual.id = nodeId;
+    visual.type = moduleType;
+    visual.displayName = nodeId;  // TODO: Get from node getName()
+    visual.position = position;
+    visual.bounds = juce::Rectangle<float>(position.x, position.y, nodeWidth, nodeHeight);
+    visual.color = juce::Colours::lightblue;  // TODO: Get from node
+    visual.numInputs = numInputs;
+
+    nodeVisuals.push_back(visual);
+
+    notifyGraphModified();
+    repaint();
+
+    return nodeId;
+}
+
+bool ChainEditor::removeNode(const std::string& nodeId)
+{
+    if (!currentGraph || isReadOnly) {
+        return false;
+    }
+
+    // Remove from graph
+    auto removed = currentGraph->removeNode(nodeId);
+    if (!removed) {
+        return false;
+    }
+
+    // Remove visual
+    nodeVisuals.erase(
+        std::remove_if(nodeVisuals.begin(), nodeVisuals.end(),
+                       [&nodeId](const NodeVisual& v) { return v.id == nodeId; }),
+        nodeVisuals.end()
+    );
+
+    // Remove associated connections
+    connectionVisuals.erase(
+        std::remove_if(connectionVisuals.begin(), connectionVisuals.end(),
+                       [&nodeId](const ConnectionVisual& c) {
+                           return c.sourceNodeId == nodeId || c.destNodeId == nodeId;
+                       }),
+        connectionVisuals.end()
+    );
+
+    // Clear selection if this was selected
+    if (selectedNodeId == nodeId) {
+        clearSelection();
+    }
+
+    notifyGraphModified();
+    repaint();
+
+    return true;
+}
+
+bool ChainEditor::connectNodes(const std::string& sourceId, const std::string& destId)
+{
+    if (!currentGraph || isReadOnly) {
+        return false;
+    }
+
+    // Connect in graph
+    if (!currentGraph->connect(sourceId, destId)) {
+        return false;
+    }
+
+    // Create connection visual
+    ConnectionVisual connVisual;
+    connVisual.sourceNodeId = sourceId;
+    connVisual.destNodeId = destId;
+    connVisual.destInputIndex = 0;
+    connVisual.color = juce::Colours::white.withAlpha(0.8f);
+
+    connectionVisuals.push_back(connVisual);
+
+    notifyGraphModified();
+    repaint();
+
+    return true;
+}
+
+bool ChainEditor::disconnectNodes(const std::string& sourceId, const std::string& destId)
+{
+    if (!currentGraph || isReadOnly) {
+        return false;
+    }
+
+    // Disconnect in graph
+    if (!currentGraph->disconnect(sourceId, destId)) {
+        return false;
+    }
+
+    // Remove connection visual
+    connectionVisuals.erase(
+        std::remove_if(connectionVisuals.begin(), connectionVisuals.end(),
+                       [&](const ConnectionVisual& c) {
+                           return c.sourceNodeId == sourceId && c.destNodeId == destId;
+                       }),
+        connectionVisuals.end()
+    );
+
+    notifyGraphModified();
+    repaint();
+
+    return true;
+}
+
+void ChainEditor::selectNode(const std::string& nodeId)
+{
+    selectedNodeId = nodeId;
+
+    // Update visual state
+    for (auto& visual : nodeVisuals) {
+        visual.isSelected = (visual.id == nodeId);
+    }
+
+    // Update properties panel
+    if (propertiesPanel) {
+        propertiesPanel->setSelectedNode(nodeId);
+    }
+
+    repaint();
+}
+
+void ChainEditor::clearSelection()
+{
+    selectedNodeId.clear();
+
+    for (auto& visual : nodeVisuals) {
+        visual.isSelected = false;
+    }
+
+    if (propertiesPanel) {
+        propertiesPanel->clearSelection();
+    }
+
+    repaint();
+}
+
+void ChainEditor::setShowPalette(bool show)
+{
+    showPalette = show;
+    palette->setVisible(show);
+    resized();
+}
+
+void ChainEditor::setShowProperties(bool show)
+{
+    showProperties = show;
+    propertiesPanel->setVisible(show);
+    resized();
+}
+
+//=============================================================================
+// Component Overrides
+//=============================================================================
+
+void ChainEditor::paint(juce::Graphics& g)
+{
+    // Background
+    g.fillAll(juce::Colour(0xff2b2b2b));
+
+    // Canvas background
+    g.setColour(juce::Colour(0xff1e1e1e));
+    g.fillRect(canvasArea);
+
+    // Draw grid (optional)
+    g.setColour(juce::Colour(0xff3a3a3a));
+    const int gridSize = 20;
+    for (int x = canvasArea.getX(); x < canvasArea.getRight(); x += gridSize) {
+        g.drawVerticalLine(x, canvasArea.getY(), canvasArea.getBottom());
+    }
+    for (int y = canvasArea.getY(); y < canvasArea.getBottom(); y += gridSize) {
+        g.drawHorizontalLine(y, canvasArea.getX(), canvasArea.getRight());
+    }
+
+    // Draw connections first (behind nodes)
+    for (const auto& conn : connectionVisuals) {
+        drawConnection(g, conn);
+    }
+
+    // Draw connection being dragged
+    if (dragState.type == DragState::Type::Connection) {
+        auto sourceNode = std::find_if(nodeVisuals.begin(), nodeVisuals.end(),
+                                        [this](const NodeVisual& n) {
+                                            return n.id == dragState.nodeId;
+                                        });
+        if (sourceNode != nodeVisuals.end()) {
+            juce::Point<float> start = getNodeOutputPort(*sourceNode);
+            drawConnectionCurve(g, start, dragState.currentPos,
+                                juce::Colours::yellow.withAlpha(0.5f), true);
+        }
+    }
+
+    // Draw nodes
+    for (const auto& node : nodeVisuals) {
+        drawNode(g, node);
+    }
+
+    // Draw read-only overlay if applicable
+    if (isReadOnly) {
+        g.setColour(juce::Colours::black.withAlpha(0.3f));
+        g.fillRect(canvasArea);
+        g.setColour(juce::Colours::white);
+        g.setFont(20.0f);
+        g.drawText("Read Only", canvasArea, juce::Justification::centred);
+    }
+}
+
+void ChainEditor::resized()
+{
+    auto bounds = getLocalBounds();
+
+    // Layout: [Palette] | [Canvas] | [Properties]
+    int paletteW = showPalette ? paletteWidth : 0;
+    int propsW = showProperties ? propertiesWidth : 0;
+
+    paletteArea = bounds.removeFromLeft(paletteW);
+    propertiesArea = bounds.removeFromRight(propsW);
+    canvasArea = bounds;
+
+    if (palette) {
+        palette->setBounds(paletteArea);
+    }
+    if (propertiesPanel) {
+        propertiesPanel->setBounds(propertiesArea);
+    }
+}
+
+void ChainEditor::mouseDown(const juce::MouseEvent& event)
+{
+    if (isReadOnly) {
+        return;
+    }
+
+    auto canvasPos = event.position - canvasArea.getTopLeft().toFloat();
+
+    // Check if clicking on a node
+    auto* node = findNodeAt(canvasPos);
+    if (node) {
+        // Check if clicking on output port (start connection drag)
+        auto outputPort = getNodeOutputPort(*node);
+        if (canvasPos.getDistanceFrom(outputPort) < portRadius * 2) {
+            dragState.type = DragState::Type::Connection;
+            dragState.nodeId = node->id;
+            dragState.startPos = outputPort;
+            dragState.currentPos = canvasPos;
+            return;
+        }
+
+        // Regular node selection and drag
+        selectNode(node->id);
+        dragState.type = DragState::Type::Node;
+        dragState.nodeId = node->id;
+        dragState.startPos = canvasPos - node->position;
+        node->isDragging = true;
+        return;
+    }
+
+    // Clicking on empty canvas
+    clearSelection();
+    dragState.type = DragState::Type::Canvas;
+    dragState.startPos = canvasPos;
+}
+
+void ChainEditor::mouseDrag(const juce::MouseEvent& event)
+{
+    if (isReadOnly) {
+        return;
+    }
+
+    auto canvasPos = event.position - canvasArea.getTopLeft().toFloat();
+
+    if (dragState.type == DragState::Type::Node) {
+        // Move node
+        auto node = std::find_if(nodeVisuals.begin(), nodeVisuals.end(),
+                                  [this](const NodeVisual& n) {
+                                      return n.id == dragState.nodeId;
+                                  });
+        if (node != nodeVisuals.end()) {
+            node->position = canvasPos - dragState.startPos;
+            node->bounds = juce::Rectangle<float>(node->position.x, node->position.y,
+                                                   nodeWidth, nodeHeight);
+            repaint();
+        }
+    } else if (dragState.type == DragState::Type::Connection) {
+        // Update connection preview
+        dragState.currentPos = canvasPos;
+        repaint();
+    }
+}
+
+void ChainEditor::mouseUp(const juce::MouseEvent& event)
+{
+    if (isReadOnly) {
+        return;
+    }
+
+    auto canvasPos = event.position - canvasArea.getTopLeft().toFloat();
+
+    if (dragState.type == DragState::Type::Connection) {
+        // Check if dropped on a node's input port
+        auto* targetNode = findNodeAt(canvasPos);
+        if (targetNode && targetNode->id != dragState.nodeId) {
+            // Connect the nodes
+            connectNodes(dragState.nodeId, targetNode->id);
+        }
+    } else if (dragState.type == DragState::Type::Node) {
+        // Stop dragging
+        auto node = std::find_if(nodeVisuals.begin(), nodeVisuals.end(),
+                                  [this](const NodeVisual& n) {
+                                      return n.id == dragState.nodeId;
+                                  });
+        if (node != nodeVisuals.end()) {
+            node->isDragging = false;
+        }
+    }
+
+    // Reset drag state
+    dragState.type = DragState::Type::None;
+    dragState.nodeId.clear();
+    repaint();
+}
+
+void ChainEditor::mouseMove(const juce::MouseEvent& event)
+{
+    auto canvasPos = event.position - canvasArea.getTopLeft().toFloat();
+
+    // Update hover state
+    std::string newHoveredId;
+    auto* node = findNodeAt(canvasPos);
+    if (node) {
+        newHoveredId = node->id;
+    }
+
+    if (newHoveredId != hoveredNodeId) {
+        // Clear previous hover
+        for (auto& n : nodeVisuals) {
+            n.isHovered = (n.id == newHoveredId);
+        }
+        hoveredNodeId = newHoveredId;
+        repaint();
+    }
+}
+
+bool ChainEditor::keyPressed(const juce::KeyPress& key)
+{
+    if (isReadOnly) {
+        return false;
+    }
+
+    // Delete key removes selected node
+    if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
+        if (!selectedNodeId.empty()) {
+            removeNode(selectedNodeId);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+//=============================================================================
+// Helper Methods - Visual Rebuilding
+//=============================================================================
+
+void ChainEditor::rebuildVisualsFromGraph()
+{
+    nodeVisuals.clear();
+    connectionVisuals.clear();
+
+    if (!currentGraph) {
+        return;
+    }
+
+    // Create visuals for nodes
+    int xPos = 100;
+    int yPos = 100;
+    const int spacing = 150;
+
+    currentGraph->forEachNode([&](const std::string& id, const SignalNode* node) {
+        if (!node) return;
+
+        NodeVisual visual;
+        visual.id = id;
+        visual.displayName = node->getName();
+        visual.type = "unknown";  // TODO: Store type in graph
+        visual.position = juce::Point<float>(xPos, yPos);
+        visual.bounds = juce::Rectangle<float>(xPos, yPos, nodeWidth, nodeHeight);
+        visual.color = node->getProbeColor();
+
+        nodeVisuals.push_back(visual);
+
+        xPos += spacing;
+        if (xPos > canvasArea.getWidth() - 100) {
+            xPos = 100;
+            yPos += spacing;
+        }
+    });
+
+    // Create visuals for connections
+    auto connections = currentGraph->getConnections();
+    for (const auto& conn : connections) {
+        ConnectionVisual connVisual;
+        connVisual.sourceNodeId = conn.sourceNode;
+        connVisual.destNodeId = conn.destNode;
+        connVisual.destInputIndex = conn.destInputIndex;
+        connVisual.color = juce::Colours::white.withAlpha(0.8f);
+
+        connectionVisuals.push_back(connVisual);
+    }
+}
+
+ChainEditor::NodeVisual* ChainEditor::findNodeAt(juce::Point<float> position)
+{
+    for (auto& node : nodeVisuals) {
+        if (node.bounds.contains(position)) {
+            return &node;
+        }
+    }
+    return nullptr;
+}
+
+ChainEditor::ConnectionVisual* ChainEditor::findConnectionAt(juce::Point<float> position)
+{
+    // TODO: Implement hit testing for curves
+    (void)position;
+    return nullptr;
+}
+
+juce::Point<float> ChainEditor::getNodeInputPort(const NodeVisual& node) const
+{
+    return node.bounds.getCentre().translated(-node.bounds.getWidth() / 2, 0);
+}
+
+juce::Point<float> ChainEditor::getNodeOutputPort(const NodeVisual& node) const
+{
+    return node.bounds.getCentre().translated(node.bounds.getWidth() / 2, 0);
+}
+
+void ChainEditor::drawNode(juce::Graphics& g, const NodeVisual& node)
+{
+    auto offset = canvasArea.getTopLeft().toFloat();
+    auto bounds = node.bounds.translated(offset.x, offset.y);
+
+    // Node body
+    g.setColour(node.color.darker(node.isSelected ? 0.0f : 0.3f));
+    g.fillRoundedRectangle(bounds, 8.0f);
+
+    // Border
+    if (node.isSelected) {
+        g.setColour(juce::Colours::yellow);
+        g.drawRoundedRectangle(bounds.reduced(1), 8.0f, 3.0f);
+    } else if (node.isHovered) {
+        g.setColour(juce::Colours::white);
+        g.drawRoundedRectangle(bounds, 8.0f, 2.0f);
+    } else {
+        g.setColour(juce::Colours::grey);
+        g.drawRoundedRectangle(bounds, 8.0f, 1.0f);
+    }
+
+    // Node name
+    g.setColour(juce::Colours::white);
+    g.setFont(14.0f);
+    g.drawText(node.displayName, bounds, juce::Justification::centred);
+
+    // Input port
+    auto inputPort = getNodeInputPort(node).translated(offset.x, offset.y);
+    g.setColour(juce::Colours::green);
+    g.fillEllipse(inputPort.x - portRadius, inputPort.y - portRadius,
+                  portRadius * 2, portRadius * 2);
+
+    // Output port
+    auto outputPort = getNodeOutputPort(node).translated(offset.x, offset.y);
+    g.setColour(juce::Colours::red);
+    g.fillEllipse(outputPort.x - portRadius, outputPort.y - portRadius,
+                  portRadius * 2, portRadius * 2);
+}
+
+void ChainEditor::drawConnection(juce::Graphics& g, const ConnectionVisual& conn)
+{
+    // Find source and dest nodes
+    auto source = std::find_if(nodeVisuals.begin(), nodeVisuals.end(),
+                                 [&conn](const NodeVisual& n) {
+                                     return n.id == conn.sourceNodeId;
+                                 });
+    auto dest = std::find_if(nodeVisuals.begin(), nodeVisuals.end(),
+                               [&conn](const NodeVisual& n) {
+                                   return n.id == conn.destNodeId;
+                               });
+
+    if (source == nodeVisuals.end() || dest == nodeVisuals.end()) {
+        return;
+    }
+
+    auto offset = canvasArea.getTopLeft().toFloat();
+    juce::Point<float> start = getNodeOutputPort(*source).translated(offset.x, offset.y);
+    juce::Point<float> end = getNodeInputPort(*dest).translated(offset.x, offset.y);
+
+    drawConnectionCurve(g, start, end, conn.color);
+}
+
+void ChainEditor::drawConnectionCurve(juce::Graphics& g,
+                                       juce::Point<float> start,
+                                       juce::Point<float> end,
+                                       juce::Colour color,
+                                       bool dashed)
+{
+    g.setColour(color);
+
+    juce::Path path;
+    path.startNewSubPath(start);
+
+    // Bezier curve for smooth connections
+    float midX = (start.x + end.x) / 2;
+    juce::Point<float> cp1(midX, start.y);
+    juce::Point<float> cp2(midX, end.y);
+
+    path.cubicTo(cp1, cp2, end);
+
+    if (dashed) {
+        // JUCE doesn't support dashed paths directly, so use reduced opacity instead
+        g.setOpacity(0.5f);
+        g.strokePath(path, juce::PathStrokeType(connectionThickness));
+        g.setOpacity(1.0f);
+    } else {
+        g.strokePath(path, juce::PathStrokeType(connectionThickness));
+    }
+}
+
+void ChainEditor::notifyGraphModified()
+{
+    if (onGraphModified) {
+        onGraphModified(currentGraph);
+    }
+}
+
+std::string ChainEditor::generateNodeId(const std::string& type)
+{
+    return type + std::to_string(nextNodeIndex++);
+}
+
+//=============================================================================
+// ModulePalette Implementation
+//=============================================================================
+
+ChainEditor::ModulePalette::ModulePalette(ChainEditor& editor)
+    : owner(editor)
+{
+    refreshItems();
+}
+
+void ChainEditor::ModulePalette::paint(juce::Graphics& g)
+{
+    // Background
+    g.fillAll(juce::Colour(0xff252525));
+
+    // Title
+    g.setColour(juce::Colours::white);
+    g.setFont(16.0f);
+    g.drawText("Modules", getLocalBounds().removeFromTop(30), juce::Justification::centred);
+
+    // Draw items
+    for (const auto& item : items) {
+        // Item background
+        g.setColour(item.color.darker(0.5f));
+        g.fillRoundedRectangle(item.bounds.toFloat(), 4.0f);
+
+        // Border
+        g.setColour(juce::Colours::grey);
+        g.drawRoundedRectangle(item.bounds.toFloat(), 4.0f, 1.0f);
+
+        // Name
+        g.setColour(juce::Colours::white);
+        g.setFont(12.0f);
+        g.drawText(item.displayName, item.bounds, juce::Justification::centred);
+    }
+}
+
+void ChainEditor::ModulePalette::resized()
+{
+    refreshItems();
+}
+
+void ChainEditor::ModulePalette::mouseDown(const juce::MouseEvent& event)
+{
+    // TODO: Start drag from palette
+    (void)event;
+}
+
+void ChainEditor::ModulePalette::mouseDrag(const juce::MouseEvent& event)
+{
+    // TODO: Continue drag
+    (void)event;
+}
+
+void ChainEditor::ModulePalette::refreshItems()
+{
+    items.clear();
+
+    // Define available modules
+    struct ModuleDef {
+        std::string type;
+        std::string name;
+        juce::Colour color;
+    };
+
+    std::vector<ModuleDef> moduleDefs = {
+        {"oscillator", "Oscillator", juce::Colour(0xffFF9500)},
+        {"filter", "Filter", juce::Colour(0xffBB86FC)},
+        {"mixer", "Mixer", juce::Colour(0xff4CAF50)}
+    };
+
+    int y = 40;
+    int itemHeight = 50;
+    int margin = 10;
+    int width = getWidth() - margin * 2;
+
+    for (const auto& def : moduleDefs) {
+        PaletteItem item;
+        item.type = def.type;
+        item.displayName = def.name;
+        item.color = def.color;
+        item.bounds = juce::Rectangle<int>(margin, y, width, itemHeight);
+
+        items.push_back(item);
+
+        y += itemHeight + margin;
+    }
+}
+
+//=============================================================================
+// PropertiesPanel Implementation
+//=============================================================================
+
+ChainEditor::PropertiesPanel::PropertiesPanel(ChainEditor& editor)
+    : owner(editor)
+{
+}
+
+void ChainEditor::PropertiesPanel::paint(juce::Graphics& g)
+{
+    // Background
+    g.fillAll(juce::Colour(0xff252525));
+
+    // Title
+    g.setColour(juce::Colours::white);
+    g.setFont(16.0f);
+    g.drawText("Properties", getLocalBounds().removeFromTop(30), juce::Justification::centred);
+
+    if (selectedNodeId.empty()) {
+        g.setFont(12.0f);
+        g.setColour(juce::Colours::grey);
+        g.drawText("No node selected", getLocalBounds(), juce::Justification::centred);
+    }
+}
+
+void ChainEditor::PropertiesPanel::resized()
+{
+    // Layout parameter controls
+    auto bounds = getLocalBounds().reduced(10);
+    bounds.removeFromTop(30);  // Skip title area
+
+    for (auto* control : parameterControls) {
+        control->setBounds(bounds.removeFromTop(40));
+    }
+}
+
+void ChainEditor::PropertiesPanel::setSelectedNode(const std::string& nodeId)
+{
+    selectedNodeId = nodeId;
+    rebuildControls();
+    repaint();
+}
+
+void ChainEditor::PropertiesPanel::clearSelection()
+{
+    selectedNodeId.clear();
+    parameterControls.clear();
+    repaint();
+}
+
+void ChainEditor::PropertiesPanel::rebuildControls()
+{
+    parameterControls.clear();
+
+    if (selectedNodeId.empty() || !owner.currentGraph) {
+        return;
+    }
+
+    // TODO: Query node for parameters and create controls dynamically
+    // For now, just show a placeholder label
+
+    auto* label = new juce::Label("nodeIdLabel", "Node: " + selectedNodeId);
+    label->setColour(juce::Label::textColourId, juce::Colours::white);
+    parameterControls.add(label);
+    addAndMakeVisible(label);
+
+    resized();
+}
+
+} // namespace vizasynth
