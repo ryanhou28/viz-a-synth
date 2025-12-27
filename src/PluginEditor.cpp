@@ -264,6 +264,20 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
         [this]() { audioProcessor.resetClipping(); });
     addAndMakeVisible(levelMeter);
 
+    // Setup chain editor button
+    chainEditorButton.setClickingTogglesState(true);
+    chainEditorButton.setColour(juce::TextButton::buttonColourId, config.getAccentColour());
+    chainEditorButton.onClick = [this]() {
+        showChainEditor = chainEditorButton.getToggleState();
+        chainEditor.setVisible(showChainEditor);
+        resized();
+    };
+    addAndMakeVisible(chainEditorButton);
+
+    // Setup chain editor (initially hidden)
+    chainEditor.setVisible(false);
+    addAndMakeVisible(chainEditor);
+
     // Setup virtual keyboard
     virtualKeyboard.setNoteCallback([this](const juce::MidiMessage& msg) {
         audioProcessor.addMidiMessage(msg);
@@ -704,6 +718,17 @@ void VizASynthAudioProcessorEditor::resized()
     vizControlArea.removeFromLeft(layout.vizControlSectionSpacing);
     timeWindowLabel.setBounds(vizControlArea.removeFromLeft(layout.vizControlLabelWidth));
     timeWindowSlider.setBounds(vizControlArea);
+
+    // Chain Editor button - place it in the top-right corner
+    int chainEditorButtonWidth = 100;
+    int chainEditorButtonHeight = 30;
+    chainEditorButton.setBounds(getWidth() - chainEditorButtonWidth - 10, 10,
+                                 chainEditorButtonWidth, chainEditorButtonHeight);
+
+    // Chain Editor - overlay the entire window when visible
+    if (showChainEditor) {
+        chainEditor.setBounds(getLocalBounds());
+    }
 }
 
 void VizASynthAudioProcessorEditor::timerCallback()

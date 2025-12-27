@@ -14,6 +14,7 @@
 #include "UI/VirtualKeyboard.h"
 #include "Core/Configuration.h"
 #include "Visualization/SignalFlow/SignalFlowView.h"
+#include "UI/ChainEditor.h"
 
 //==============================================================================
 /**
@@ -121,6 +122,11 @@ private:
 
     // Virtual keyboard
     VirtualKeyboard virtualKeyboard;
+
+    // Chain editor (toggleable)
+    vizasynth::ChainEditor chainEditor;
+    juce::TextButton chainEditorButton{"Chain Editor"};
+    bool showChainEditor = false;
 
     // Parameter attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oscTypeAttachment;
