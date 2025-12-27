@@ -5,17 +5,74 @@ namespace vizasynth {
 SignalFlowView::SignalFlowView(ProbeManager& pm)
     : probeManager(pm)
 {
-    // Initialize the signal blocks
+    // Initialize the signal blocks (legacy hardcoded blocks)
     // Note: ENV is not selectable because PostEnvelope probe point is not implemented
     // (envelope just multiplies signal - effectively same as Output)
     blocks = {
-        {"OSC", "Signal Generator", ProbePoint::Oscillator, {}, false, true},
-        {"FILTER", "LTI System", ProbePoint::PostFilter, {}, false, true},
-        {"ENV", "Time-varying Gain", ProbePoint::PostEnvelope, {}, false, false},  // Not selectable
-        {"OUT", "Output", ProbePoint::Output, {}, false, true}
+        {"OSC", "Signal Generator", ProbePoint::Oscillator, "", getProbeColour(ProbePoint::Oscillator), {}, false, true},
+        {"FILTER", "LTI System", ProbePoint::PostFilter, "", getProbeColour(ProbePoint::PostFilter), {}, false, true},
+        {"ENV", "Time-varying Gain", ProbePoint::PostEnvelope, "", getProbeColour(ProbePoint::PostEnvelope), {}, false, false},  // Not selectable
+        {"OUT", "Output", ProbePoint::Output, "", getProbeColour(ProbePoint::Output), {}, false, true}
     };
 
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
+}
+
+void SignalFlowView::setProbeRegistry(ProbeRegistry* registry)
+{
+    probeRegistry = registry;
+    if (probeRegistry) {
+        updateFromProbeRegistry();
+    }
+}
+
+void SignalFlowView::updateFromProbeRegistry()
+{
+    if (!probeRegistry) {
+        useDynamicProbes = false;
+        return;
+    }
+
+    // Get all available probes from the registry
+    auto probes = probeRegistry->getAvailableProbes();
+
+    if (probes.empty()) {
+        // No probes registered yet, keep using hardcoded blocks
+        useDynamicProbes = false;
+        return;
+    }
+
+    useDynamicProbes = true;
+
+    // Rebuild blocks from registry
+    blocks.clear();
+
+    for (const auto& probe : probes) {
+        SignalBlock block;
+        block.name = probe.displayName;
+        block.processingType = probe.processingType;
+        block.probeId = probe.id;
+        block.color = probe.color;
+        block.probePoint = ProbePoint::Output;  // Default (not used in dynamic mode)
+        block.isSelectable = true;
+        block.isHovered = false;
+        blocks.push_back(block);
+    }
+
+    // Add envelope block (always present, non-selectable)
+    // Envelope is separate from the signal chain, so it's not registered as a probe
+    SignalBlock envBlock;
+    envBlock.name = "ENV";
+    envBlock.processingType = "Time-varying Gain";
+    envBlock.probeId = "envelope";
+    envBlock.color = juce::Colour(0xffffd93d);  // Yellow
+    envBlock.probePoint = ProbePoint::PostEnvelope;
+    envBlock.isSelectable = false;
+    envBlock.isHovered = false;
+    blocks.push_back(envBlock);
+
+    resized();
+    repaint();
 }
 
 SignalFlowView::~SignalFlowView() = default;
@@ -51,7 +108,14 @@ void SignalFlowView::paint(juce::Graphics& g)
     g.fillRoundedRectangle(getLocalBounds().toFloat(), 10.0f);
 
     // Get current probe selection
-    auto activeProbe = probeManager.getActiveProbe();
+    std::string activeProbeId;
+    ProbePoint activeProbe = ProbePoint::Output;
+
+    if (useDynamicProbes && probeRegistry) {
+        activeProbeId = probeRegistry->getActiveProbe();
+    } else {
+        activeProbe = probeManager.getActiveProbe();
+    }
 
     // Draw arrows first (so blocks appear on top)
     g.setColour(juce::Colour(0xff606080));
@@ -67,7 +131,9 @@ void SignalFlowView::paint(juce::Graphics& g)
 
     // Draw blocks
     for (size_t i = 0; i < blocks.size(); ++i) {
-        bool isSelected = (blocks[i].probePoint == activeProbe);
+        bool isSelected = useDynamicProbes
+            ? (blocks[i].probeId == activeProbeId)
+            : (blocks[i].probePoint == activeProbe);
         drawBlock(g, blocks[i], isSelected);
     }
 
@@ -97,11 +163,13 @@ void SignalFlowView::drawBlock(juce::Graphics& g, const SignalBlock& block, bool
 
     // Border - colored if selected, dim otherwise
     juce::Colour borderColour;
+    juce::Colour blockColour = block.color.isTransparent() ? getProbeColour(block.probePoint) : block.color;
+
     if (!block.isSelectable) {
         // Dashed/dim border for non-selectable
         borderColour = juce::Colour(0xff303050);
     } else if (isSelected) {
-        borderColour = getProbeColour(block.probePoint);
+        borderColour = blockColour;
     } else {
         borderColour = juce::Colour(0xff404060);
     }
@@ -113,7 +181,7 @@ void SignalFlowView::drawBlock(juce::Graphics& g, const SignalBlock& block, bool
 
     // Glow effect if selected (only for selectable blocks)
     if (isSelected && block.isSelectable) {
-        auto glowColour = getProbeColour(block.probePoint).withAlpha(0.3f);
+        auto glowColour = blockColour.withAlpha(0.3f);
         g.setColour(glowColour);
         g.drawRoundedRectangle(bounds.expanded(2.0f), blockCornerRadius + 2.0f, 2.0f);
     }
@@ -123,7 +191,7 @@ void SignalFlowView::drawBlock(juce::Graphics& g, const SignalBlock& block, bool
     if (!block.isSelectable) {
         textColour = config.getTextColour().withAlpha(0.5f);
     } else if (isSelected) {
-        textColour = getProbeColour(block.probePoint);
+        textColour = blockColour;
     } else {
         textColour = config.getTextColour();
     }
@@ -191,14 +259,30 @@ void SignalFlowView::mouseDown(const juce::MouseEvent& event)
             return;
         }
 
-        auto newProbe = blocks[clickedIndex].probePoint;
+        if (useDynamicProbes && probeRegistry) {
+            // Use string-based probe ID
+            const auto& probeId = blocks[clickedIndex].probeId;
+            if (probeRegistry->setActiveProbe(probeId)) {
+                // Also update legacy probe manager for backwards compatibility
+                auto newProbe = blocks[clickedIndex].probePoint;
+                probeManager.setActiveProbe(newProbe);
 
-        // Update probe manager
-        probeManager.setActiveProbe(newProbe);
+                // Notify callback
+                if (selectionCallback) {
+                    selectionCallback(newProbe);
+                }
+            }
+        } else {
+            // Use legacy enum-based probe
+            auto newProbe = blocks[clickedIndex].probePoint;
 
-        // Notify callback
-        if (selectionCallback) {
-            selectionCallback(newProbe);
+            // Update probe manager
+            probeManager.setActiveProbe(newProbe);
+
+            // Notify callback
+            if (selectionCallback) {
+                selectionCallback(newProbe);
+            }
         }
 
         repaint();

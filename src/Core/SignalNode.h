@@ -5,6 +5,12 @@
 #include <string>
 #include <optional>
 #include <vector>
+#include <juce_gui_basics/juce_gui_basics.h>
+
+// Forward declaration to avoid circular dependency
+namespace vizasynth {
+    class ProbeBuffer;
+}
 
 namespace vizasynth {
 
@@ -160,6 +166,40 @@ public:
      * Note: Envelope generators are NOT LTI (time-varying gain).
      */
     virtual bool isLTI() const { return false; }
+
+    //=========================================================================
+    // Probe Support (for flexible probe system)
+    //=========================================================================
+
+    /**
+     * Get the probe buffer for this node.
+     * Modules can optionally provide a probe buffer that captures their output.
+     * Default: returns nullptr (no probing support).
+     */
+    virtual ProbeBuffer* getProbeBuffer() { return nullptr; }
+    virtual const ProbeBuffer* getProbeBuffer() const { return nullptr; }
+
+    /**
+     * Get the color for this probe point in visualizations.
+     * Default: light gray.
+     */
+    virtual juce::Colour getProbeColor() const {
+        return juce::Colour(0xffe0e0e0);  // Light gray
+    }
+
+    /**
+     * Enable or disable probing for this node.
+     * When disabled, the probe buffer is not filled (saves CPU).
+     * Default implementation does nothing.
+     */
+    virtual void setProbeEnabled(bool enabled) {
+        (void)enabled;  // Default: no-op
+    }
+
+    /**
+     * Check if probing is enabled for this node.
+     */
+    virtual bool isProbeEnabled() const { return false; }
 
 protected:
     double currentSampleRate = 44100.0;

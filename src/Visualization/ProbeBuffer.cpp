@@ -1,4 +1,5 @@
 #include "ProbeBuffer.h"
+#include "ProbeRegistry.h"
 #include <limits>
 
 namespace vizasynth {
@@ -142,6 +143,27 @@ std::vector<float> ProbeManager::getActiveFrequencies() const
     }
 
     return frequencies;
+}
+
+void ProbeManager::setProbeRegistry(ProbeRegistry* registry)
+{
+    probeRegistry = registry;
+}
+
+bool ProbeManager::setActiveProbeById(const std::string& id)
+{
+    if (probeRegistry == nullptr)
+        return false;
+
+    return probeRegistry->setActiveProbe(id);
+}
+
+std::string ProbeManager::getActiveProbeId() const
+{
+    if (probeRegistry == nullptr)
+        return "";
+
+    return probeRegistry->getActiveProbe();
 }
 
 } // namespace vizasynth

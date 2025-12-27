@@ -5,6 +5,12 @@
 #include <array>
 #include <atomic>
 #include <vector>
+#include <string>
+
+// Forward declaration
+namespace vizasynth {
+    class ProbeRegistry;
+}
 
 namespace vizasynth {
 
@@ -44,6 +50,11 @@ private:
 /**
  * Manages multiple probe buffers and tracks the most recently triggered voice.
  * Shared between audio processor and UI.
+ *
+ * This class now works alongside ProbeRegistry for flexible probe point management:
+ *   - Legacy enum-based API (setActiveProbe(ProbePoint)) for backwards compatibility
+ *   - New string-based API (setActiveProbeById(string)) for dynamic probes
+ *   - Internally delegates to ProbeRegistry when available
  */
 class ProbeManager
 {
@@ -56,9 +67,45 @@ public:
     // Get the probe buffer for mixed output (sum of all voices)
     ProbeBuffer& getMixProbeBuffer() { return mixProbeBuffer; }
 
-    // Set which probe point is active
+    //=========================================================================
+    // Legacy Probe API (enum-based, for backwards compatibility)
+    //=========================================================================
+
+    // Set which probe point is active (legacy enum-based)
     void setActiveProbe(ProbePoint probe);
     ProbePoint getActiveProbe() const;
+
+    //=========================================================================
+    // New Probe API (string-based, for flexible probe system)
+    //=========================================================================
+
+    /**
+     * Set the ProbeRegistry to use for dynamic probe point management.
+     * This should be called once during initialization.
+     */
+    void setProbeRegistry(ProbeRegistry* registry);
+
+    /**
+     * Get the current ProbeRegistry.
+     */
+    ProbeRegistry* getProbeRegistry() const { return probeRegistry; }
+
+    /**
+     * Set the active probe by string ID (new flexible probe system).
+     * @param id The probe ID (e.g., "osc1.output", "filter1.output")
+     * @return true if successful, false if probe not found
+     */
+    bool setActiveProbeById(const std::string& id);
+
+    /**
+     * Get the active probe ID (string-based).
+     * @return Active probe ID, or empty string if using legacy enum system
+     */
+    std::string getActiveProbeId() const;
+
+    //=========================================================================
+    // Voice Tracking
+    //=========================================================================
 
     // Voice tracking
     void setActiveVoice(int voiceIndex);
@@ -96,6 +143,9 @@ private:
     // Track frequencies for each voice (for mix mode lowest frequency calculation)
     static constexpr int MaxVoices = 8;
     std::array<std::atomic<float>, MaxVoices> voiceFrequencies{};
+
+    // New: ProbeRegistry for dynamic probe point management
+    ProbeRegistry* probeRegistry = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ProbeManager)
 };

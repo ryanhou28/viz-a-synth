@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../ProbeBuffer.h"
+#include "../ProbeRegistry.h"
 #include "../../Core/Configuration.h"
 
 namespace vizasynth {
@@ -42,6 +43,18 @@ public:
      */
     void updateProbeSelection();
 
+    /**
+     * Update the signal flow blocks from the ProbeRegistry.
+     * Call this when the signal chain changes to rebuild the flow diagram.
+     */
+    void updateFromProbeRegistry();
+
+    /**
+     * Set the ProbeRegistry to use for dynamic probe visualization.
+     * When set, the view will query the registry for available probes.
+     */
+    void setProbeRegistry(ProbeRegistry* registry);
+
     //=========================================================================
     // juce::Component Overrides
     //=========================================================================
@@ -58,7 +71,9 @@ private:
     struct SignalBlock {
         std::string name;           // Display name (e.g., "OSC", "FILTER")
         std::string processingType; // Type description (e.g., "Signal Generator")
-        ProbePoint probePoint;      // Associated probe point
+        ProbePoint probePoint;      // Associated probe point (legacy)
+        std::string probeId;        // String-based probe ID (new flexible system)
+        juce::Colour color;         // Block color
         juce::Rectangle<float> bounds;  // Rendered bounds (calculated in resized)
         bool isHovered = false;
         bool isSelectable = true;   // Whether this block can be clicked to select probe
@@ -86,12 +101,16 @@ private:
 
     ProbeManager& probeManager;
     ProbeSelectionCallback selectionCallback;
+    ProbeRegistry* probeRegistry = nullptr;
 
     // The signal blocks in order
     std::vector<SignalBlock> blocks;
 
     // Currently hovered block index (-1 if none)
     int hoveredBlockIndex = -1;
+
+    // Flag to track if we're using dynamic probes from registry
+    bool useDynamicProbes = false;
 
     // Layout constants
     static constexpr float blockCornerRadius = 8.0f;

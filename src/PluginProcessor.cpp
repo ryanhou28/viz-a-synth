@@ -304,6 +304,9 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
     // Apply chain config to APVTS so UI reflects the loaded configuration
     applyChainConfigToAPVTS(chainConfig);
 
+    // Initialize ProbeRegistry and connect to ProbeManager
+    probeManager.setProbeRegistry(&probeRegistry);
+
     // Add voices to synthesizer with loaded configuration
     for (int i = 0; i < 8; ++i)
     {
@@ -315,6 +318,20 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
 
     // Add sound
     synth.addSound(new VizASynthSound());
+
+    // Register standard probe points with the ProbeRegistry
+    // This should be done after voices are created
+    // For now, we register the first voice's signal chain modules
+    if (auto* voice0 = getVoice(0)) {
+        voice0->getSignalChain().setProbeRegistry(&probeRegistry);
+        voice0->getSignalChain().registerAllProbesWithRegistry();
+    }
+
+    // Register the mix output probe (sum of all voices)
+    probeRegistry.registerProbe("mix.output", "Mix",  "Voice Mixer",
+                                &probeManager.getMixProbeBuffer(),
+                                juce::Colour(0xffb088f9),  // Purple
+                                1000);  // High order index (appears last)
 }
 
 VizASynthAudioProcessor::~VizASynthAudioProcessor()
@@ -652,18 +669,42 @@ void VizASynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     if (peakLevel >= 1.0f)
         clipping.store(true);
 
-    // Probe mixed output for mix mode visualization
-    // This captures the sum of all voices at the Output probe point
-    ProbePoint activeProbe = probeManager.getActiveProbe();
-    if (activeProbe == ProbePoint::Output)
+    // Probe output buffers
+    // This ensures visualizations show silence (zeros) when no notes are playing
+    const int numSamples = buffer.getNumSamples();
+    const float* channelData = buffer.getReadPointer(0);  // Left channel
+
+    // Always fill mix probe buffer (Mix mode visualization)
+    for (int i = 0; i < numSamples; ++i)
     {
-        const int numSamples = buffer.getNumSamples();
-        const float* channelData = buffer.getReadPointer(0);  // Left channel
+        probeManager.getMixProbeBuffer().push(channelData[i]);
+    }
+
+    // Also fill single voice probe buffer when in Mix mode or when no voices are active
+    // This ensures visualizations go to zero during silence
+    VoiceMode voiceMode = probeManager.getVoiceMode();
+    if (voiceMode == VoiceMode::Mix || synth.getNumVoices() == 0 || !isAnyNoteActive())
+    {
+        // In Mix mode or during silence, push the mixed output to single voice buffer too
+        // This makes single-voice visualizations show the mix when appropriate
         for (int i = 0; i < numSamples; ++i)
         {
-            probeManager.getMixProbeBuffer().push(channelData[i]);
+            probeManager.getProbeBuffer().push(channelData[i]);
         }
     }
+}
+
+bool VizASynthAudioProcessor::isAnyNoteActive() const
+{
+    for (int i = 0; i < synth.getNumVoices(); ++i)
+    {
+        if (auto* voice = synth.getVoice(i))
+        {
+            if (voice->isVoiceActive())
+                return true;
+        }
+    }
+    return false;
 }
 
 //==============================================================================

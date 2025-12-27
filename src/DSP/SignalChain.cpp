@@ -1,4 +1,5 @@
 #include "SignalChain.h"
+#include "../Visualization/ProbeRegistry.h"
 
 namespace vizasynth {
 
@@ -22,7 +23,25 @@ size_t SignalChain::addModule(std::unique_ptr<SignalNode> module, const std::str
         module->prepare(currentSampleRate, currentBlockSize);
     }
 
-    modules.emplace_back(std::move(module), moduleId);
+    // Register probe with ProbeRegistry if available
+    size_t index = modules.size();
+    if (probeRegistry && module) {
+        std::string probeId = moduleId + ".output";
+        std::string displayName = module->getName();
+        std::string processingType = module->getProcessingType();
+        juce::Colour color = module->getProbeColor();
+        int orderIndex = static_cast<int>(index * 10);  // Leave gaps for future insertions
+
+        // The probe buffer will be created in ModuleEntry, so we'll register it after emplacement
+        modules.emplace_back(std::move(module), moduleId);
+
+        probeRegistry->registerProbe(probeId, displayName, processingType,
+                                     modules.back().probeBuffer.get(),
+                                     color, orderIndex);
+    } else {
+        modules.emplace_back(std::move(module), moduleId);
+    }
+
     return modules.size() - 1;
 }
 
@@ -49,6 +68,12 @@ std::unique_ptr<SignalNode> SignalChain::removeModule(size_t index)
 {
     if (index >= modules.size()) {
         return nullptr;
+    }
+
+    // Unregister probe from ProbeRegistry if available
+    if (probeRegistry) {
+        std::string probeId = modules[index].id + ".output";
+        probeRegistry->unregisterProbe(probeId);
     }
 
     auto module = std::move(modules[index].module);
@@ -102,7 +127,37 @@ std::string SignalChain::getModuleId(size_t index) const
 
 void SignalChain::clear()
 {
+    // Unregister all probes if registry is available
+    if (probeRegistry) {
+        for (const auto& entry : modules) {
+            std::string probeId = entry.id + ".output";
+            probeRegistry->unregisterProbe(probeId);
+        }
+    }
+
     modules.clear();
+}
+
+void SignalChain::registerAllProbesWithRegistry()
+{
+    if (!probeRegistry) {
+        return;
+    }
+
+    for (size_t i = 0; i < modules.size(); ++i) {
+        const auto& entry = modules[i];
+        if (entry.module) {
+            std::string probeId = entry.id + ".output";
+            std::string displayName = entry.module->getName();
+            std::string processingType = entry.module->getProcessingType();
+            juce::Colour color = entry.module->getProbeColor();
+            int orderIndex = static_cast<int>(i * 10);
+
+            probeRegistry->registerProbe(probeId, displayName, processingType,
+                                         entry.probeBuffer.get(),
+                                         color, orderIndex);
+        }
+    }
 }
 
 //=========================================================================

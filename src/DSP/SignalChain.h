@@ -8,6 +8,11 @@
 #include <string>
 #include <functional>
 
+// Forward declaration
+namespace vizasynth {
+    class ProbeRegistry;
+}
+
 namespace vizasynth {
 
 /**
@@ -128,6 +133,19 @@ public:
     void setActiveProbeIndex(int index) { activeProbeIndex = index; }
     int getActiveProbeIndex() const { return activeProbeIndex; }
 
+    /**
+     * Set the ProbeRegistry for dynamic probe registration.
+     * When set, modules will automatically register their probe points when added.
+     */
+    void setProbeRegistry(ProbeRegistry* registry) { probeRegistry = registry; }
+    ProbeRegistry* getProbeRegistry() const { return probeRegistry; }
+
+    /**
+     * Register all current modules with the ProbeRegistry.
+     * Call this after setting the registry to register existing modules.
+     */
+    void registerAllProbesWithRegistry();
+
     //=========================================================================
     // SignalNode Interface Implementation
     //=========================================================================
@@ -206,6 +224,7 @@ private:
     std::string chainName = "SignalChain";
     bool probingEnabled = false;
     int activeProbeIndex = -1;  // -1 means no selective probing
+    ProbeRegistry* probeRegistry = nullptr;  // Optional: for dynamic probe registration
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SignalChain)
 };

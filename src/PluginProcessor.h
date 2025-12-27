@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 #include "Visualization/ProbeBuffer.h"
+#include "Visualization/ProbeRegistry.h"
 #include "DSP/Oscillators/PolyBLEPOscillator.h"
 #include "DSP/Filters/StateVariableFilterWrapper.h"
 #include "DSP/SignalChain.h"
@@ -159,6 +160,7 @@ public:
 
     // Probe system access
     vizasynth::ProbeManager& getProbeManager() { return probeManager; }
+    vizasynth::ProbeRegistry& getProbeRegistry() { return probeRegistry; }
 
     // Level metering
     float getOutputLevel() const { return outputLevel.load(); }
@@ -190,7 +192,8 @@ private:
     //==============================================================================
     juce::Synthesiser synth;
     juce::AudioProcessorValueTreeState apvts;
-    vizasynth::ProbeManager probeManager;
+    vizasynth::ProbeRegistry probeRegistry;  // Dynamic probe point registry
+    vizasynth::ProbeManager probeManager;    // Legacy probe manager
 
     // Level metering
     std::atomic<float> outputLevel{0.0f};
@@ -206,6 +209,7 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void updateVoiceParameters();
     void applyChainConfigToAPVTS(const vizasynth::ChainConfiguration& config);
+    bool isAnyNoteActive() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VizASynthAudioProcessor)
 };
