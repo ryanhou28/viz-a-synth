@@ -1,4 +1,5 @@
 #include "ChainEditor.h"
+#include "../Core/Configuration.h"
 #include <algorithm>
 #include <limits>
 
@@ -235,28 +236,62 @@ void ChainEditor::setShowProperties(bool show)
 
 void ChainEditor::paint(juce::Graphics& g)
 {
+    auto& config = vizasynth::ConfigurationManager::getInstance();
+
     // Background
-    g.fillAll(juce::Colour(0xff2b2b2b));
+    g.fillAll(config.getBackgroundColour().darker(0.2f));
 
     // Draw close button at top-left
     g.setColour(isCloseButtonHovered ? juce::Colours::red.brighter(0.3f) : juce::Colours::darkgrey);
     g.fillRoundedRectangle(closeButtonBounds.toFloat(), 4.0f);
-    g.setColour(juce::Colours::white);
+    g.setColour(config.getTextColour());
     g.setFont(16.0f);
     g.drawText("X", closeButtonBounds, juce::Justification::centred);
 
     // Canvas background
-    g.setColour(juce::Colour(0xff1e1e1e));
+    g.setColour(config.getBackgroundColour());
     g.fillRect(canvasArea);
 
     // Draw grid (optional)
-    g.setColour(juce::Colour(0xff3a3a3a));
+    g.setColour(config.getBackgroundColour().brighter(0.1f));
     const int gridSize = 20;
     for (int x = canvasArea.getX(); x < canvasArea.getRight(); x += gridSize) {
         g.drawVerticalLine(x, canvasArea.getY(), canvasArea.getBottom());
     }
     for (int y = canvasArea.getY(); y < canvasArea.getBottom(); y += gridSize) {
         g.drawHorizontalLine(y, canvasArea.getX(), canvasArea.getRight());
+    }
+
+    // Draw validation warning if graph is invalid
+    if (currentGraph && !currentGraph->validate()) {
+        auto errorMsg = currentGraph->getValidationError();
+        if (!errorMsg.empty()) {
+            auto warningArea = juce::Rectangle<int>(
+                canvasArea.getX() + 20,
+                canvasArea.getY() + 20,
+                canvasArea.getWidth() - 40,
+                60
+            );
+
+            // Warning background using theme colors
+            auto warningBg = juce::Colour(0xffff9800);  // Orange
+            g.setColour(warningBg.withAlpha(0.9f));
+            g.fillRoundedRectangle(warningArea.toFloat(), 8.0f);
+
+            // Warning border
+            g.setColour(warningBg.darker(0.3f));
+            g.drawRoundedRectangle(warningArea.toFloat(), 8.0f, 2.0f);
+
+            // Warning icon and text
+            g.setColour(juce::Colours::black);
+            g.setFont(14.0f);
+            g.drawText("⚠ WARNING", warningArea.removeFromTop(20).reduced(10, 0),
+                      juce::Justification::centredLeft);
+
+            g.setFont(12.0f);
+            g.drawText(errorMsg, warningArea.reduced(10, 0),
+                      juce::Justification::centredLeft, true);
+        }
     }
 
     // Draw connections first (behind nodes)
@@ -657,6 +692,7 @@ juce::Point<float> ChainEditor::getNodeOutputPort(const NodeVisual& node) const
 
 void ChainEditor::drawNode(juce::Graphics& g, const NodeVisual& node)
 {
+    auto& config = vizasynth::ConfigurationManager::getInstance();
     auto offset = canvasArea.getTopLeft().toFloat();
     auto bounds = node.bounds.translated(offset.x, offset.y);
 
@@ -666,18 +702,18 @@ void ChainEditor::drawNode(juce::Graphics& g, const NodeVisual& node)
 
     // Border
     if (node.isSelected) {
-        g.setColour(juce::Colours::yellow);
+        g.setColour(config.getAccentColour());
         g.drawRoundedRectangle(bounds.reduced(1), 8.0f, 3.0f);
     } else if (node.isHovered) {
-        g.setColour(juce::Colours::white);
+        g.setColour(config.getTextColour());
         g.drawRoundedRectangle(bounds, 8.0f, 2.0f);
     } else {
-        g.setColour(juce::Colours::grey);
+        g.setColour(config.getTextColour().withAlpha(0.3f));
         g.drawRoundedRectangle(bounds, 8.0f, 1.0f);
     }
 
     // Node name
-    g.setColour(juce::Colours::white);
+    g.setColour(config.getTextColour());
     g.setFont(14.0f);
     g.drawText(node.displayName, bounds, juce::Justification::centred);
 

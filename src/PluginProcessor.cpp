@@ -45,6 +45,24 @@ void VizASynthVoice::initializeDefaultGraph()
     // Set graph name for identification
     processingGraph.setName("VoiceGraph");
 
+    #if JUCE_DEBUG
+    juce::Logger::writeToLog("VizASynthVoice::initializeDefaultGraph() - Graph initialized");
+    juce::Logger::writeToLog("  Nodes: osc1, filter1");
+    juce::Logger::writeToLog("  Connection: osc1 -> filter1");
+    juce::Logger::writeToLog("  Output node: filter1");
+
+    auto order = processingGraph.computeProcessingOrder();
+    juce::Logger::writeToLog("  Processing order size: " + juce::String(order.size()));
+    for (const auto& nodeId : order) {
+        juce::Logger::writeToLog("    - " + nodeId);
+    }
+
+    juce::Logger::writeToLog("  Validation: " + juce::String(processingGraph.validate() ? "PASS" : "FAIL"));
+    if (!processingGraph.validate()) {
+        juce::Logger::writeToLog("  ERROR: " + processingGraph.getValidationError());
+    }
+    #endif
+
     // Default ADSR parameters (envelope is separate from graph)
     adsrParams.attack = 0.1f;
     adsrParams.decay = 0.1f;
@@ -352,13 +370,17 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
 
     // Register standard probe points with the ProbeRegistry
     // This should be done after voices are created
-    // For now, we register the first voice's signal chain modules
+    // For now, we register the first voice's signal chain/graph modules
     if (auto* voice0 = getVoice(0)) {
+        // Enable probing on the legacy SignalChain (for backward compatibility)
         voice0->getSignalChain().setProbeRegistry(&probeRegistry);
         voice0->getSignalChain().registerAllProbesWithRegistry();
-
-        // CRITICAL: Enable probing so probe buffers are filled during processing
         voice0->getSignalChain().setProbingEnabled(true);
+
+        // CRITICAL FIX: Enable probing on the SignalGraph (actual audio processing)
+        voice0->getSignalGraph().setProbeRegistry(&probeRegistry);
+        voice0->getSignalGraph().registerAllProbesWithRegistry();
+        voice0->getSignalGraph().setProbingEnabled(true);
     }
 
     // Register the mix output probe (sum of all voices)

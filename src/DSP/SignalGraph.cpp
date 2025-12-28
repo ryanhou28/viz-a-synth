@@ -262,6 +262,19 @@ float SignalGraph::process(float input)
     if (processingOrderDirty) {
         processingOrder = computeProcessingOrder();
         processingOrderDirty = false;
+
+        #if JUCE_DEBUG
+        if (processingOrder.empty() && !nodes.empty()) {
+            juce::Logger::writeToLog("ERROR: SignalGraph '" + name + "' has empty processing order but " +
+                                    juce::String(nodes.size()) + " nodes!");
+            juce::Logger::writeToLog("  outputNodeId: " + juce::String(outputNodeId));
+            juce::Logger::writeToLog("  Nodes:");
+            for (const auto& [id, node] : nodes) {
+                juce::Logger::writeToLog("    - " + juce::String(id) + " (inputs: " +
+                                        juce::String(node.inputs.size()) + ")");
+            }
+        }
+        #endif
     }
 
     // Clear processed flags
@@ -395,6 +408,31 @@ bool SignalGraph::validate() const
     // (This is implicitly checked by topological sort)
 
     return true;
+}
+
+std::string SignalGraph::getValidationError() const
+{
+    // Check 1: Output node validation
+    if (outputNodeId.empty()) {
+        return "No output node set. Signal chain will produce no audio.";
+    }
+    if (nodes.find(outputNodeId) == nodes.end()) {
+        return "Output node '" + outputNodeId + "' does not exist in graph.";
+    }
+
+    // Check 2: Cycle detection
+    auto order = computeProcessingOrder();
+    if (order.empty() && !nodes.empty()) {
+        return "Cycle detected in signal graph. Cannot process audio.";
+    }
+
+    // Check 3: Disconnected nodes warning
+    const auto& outputNode = nodes.at(outputNodeId);
+    if (outputNode.inputs.empty()) {
+        return "Output node has no input connections. No audio will be produced.";
+    }
+
+    return "";  // No errors
 }
 
 std::vector<SignalGraph::NodeId> SignalGraph::computeProcessingOrder() const

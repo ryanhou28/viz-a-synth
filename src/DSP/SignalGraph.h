@@ -234,6 +234,7 @@ public:
      * @return true if graph is valid
      */
     bool validate() const;
+    std::string getValidationError() const;
 
     /**
      * Compute the processing order (topological sort).
