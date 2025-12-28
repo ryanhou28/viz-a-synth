@@ -62,6 +62,9 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     signalFlowView.setProbeRegistry(&audioProcessor.getProbeRegistry());
     signalFlowView.updateFromProbeRegistry();
 
+    // Register as ProbeRegistry listener for dynamic probe button updates
+    audioProcessor.getProbeRegistry().addListener(this);
+
     // Setup visualization mode selector buttons
     scopeButton.setClickingTogglesState(false);
     scopeButton.setColour(juce::TextButton::buttonColourId, config.getAccentColour());
@@ -101,23 +104,8 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     // Initial visualization mode
     setVisualizationMode(VisualizationMode::Oscilloscope);
 
-    // Setup probe selector buttons
-    auto setupProbeButton = [this, &config](juce::TextButton& button, vizasynth::ProbePoint probe, juce::Colour colour)
-    {
-        button.setClickingTogglesState(false);
-        button.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
-        button.setColour(juce::TextButton::textColourOffId, colour);
-        button.onClick = [this, probe]()
-        {
-            audioProcessor.getProbeManager().setActiveProbe(probe);
-            updateProbeButtons();
-        };
-        addAndMakeVisible(button);
-    };
-
-    setupProbeButton(probeOscButton, vizasynth::ProbePoint::Oscillator, vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::Oscillator));
-    setupProbeButton(probeFilterButton, vizasynth::ProbePoint::PostFilter, vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::PostFilter));
-    setupProbeButton(probeOutputButton, vizasynth::ProbePoint::Output, vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::Output));
+    // Setup dynamic probe selector buttons from ProbeRegistry
+    updateFromProbeRegistry();
 
     // Freeze button
     freezeButton.setClickingTogglesState(true);
@@ -372,6 +360,7 @@ VizASynthAudioProcessorEditor::~VizASynthAudioProcessorEditor()
 {
     stopTimer();
     vizasynth::ConfigurationManager::getInstance().removeChangeListener(this);
+    audioProcessor.getProbeRegistry().removeListener(this);
 }
 
 //==============================================================================
@@ -739,11 +728,14 @@ void VizASynthAudioProcessorEditor::resized()
     int impulseResponseButtonWidth = config.getLayoutInt("components.buttons.impulseResponse.width", 40);
     impulseResponseButton.setBounds(vizControlArea.removeFromLeft(impulseResponseButtonWidth));
     vizControlArea.removeFromLeft(layout.vizControlSectionSpacing);
-    probeOscButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlProbeWidth));
-    vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
-    probeFilterButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlProbeWidth));
-    vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
-    probeOutputButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlProbeWidth));
+
+    // Layout dynamic probe buttons
+    for (size_t i = 0; i < probeButtons.size(); ++i) {
+        probeButtons[i]->setBounds(vizControlArea.removeFromLeft(layout.vizControlProbeWidth));
+        if (i < probeButtons.size() - 1) {
+            vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
+        }
+    }
     vizControlArea.removeFromLeft(layout.vizControlSectionSpacing);
     freezeButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlFreezeWidth));
     vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
@@ -841,9 +833,15 @@ void VizASynthAudioProcessorEditor::applyThemeToComponents()
     auto toggleOnColor = config.getThemeColour("colors.buttons.toggleOn", juce::Colours::red.darker());
 
     for (auto* btn : {&scopeButton, &spectrumButton, &harmonicsButton, &poleZeroButton, &bodeButton, &transferFunctionButton,
-                      &impulseResponseButton, &probeOscButton, &probeFilterButton, &probeOutputButton, &clearTraceButton}) {
+                      &impulseResponseButton, &clearTraceButton}) {
         btn->setColour(juce::TextButton::buttonColourId, buttonDefault);
         btn->setColour(juce::TextButton::textColourOffId, buttonText);
+    }
+
+    // Apply theme to dynamic probe buttons
+    for (auto& button : probeButtons) {
+        button->setColour(juce::TextButton::buttonColourId, buttonDefault);
+        button->setColour(juce::TextButton::textColourOffId, buttonText);
     }
 
     freezeButton.setColour(juce::TextButton::buttonColourId, buttonDefault);
@@ -865,28 +863,30 @@ void VizASynthAudioProcessorEditor::applyThemeToComponents()
 void VizASynthAudioProcessorEditor::updateProbeButtons()
 {
     auto& config = vizasynth::ConfigurationManager::getInstance();
-    auto activeProbe = audioProcessor.getProbeManager().getActiveProbe();
+    auto& registry = audioProcessor.getProbeRegistry();
+    auto activeProbeId = registry.getActiveProbe();
+    auto availableProbes = registry.getAvailableProbes();
 
-    auto highlightButton = [&config](juce::TextButton& button, bool active, juce::Colour colour)
-    {
-        if (active)
-        {
-            button.setColour(juce::TextButton::buttonColourId, colour.darker(0.3f));
-            button.setColour(juce::TextButton::textColourOffId, config.getTextHighlightColour());
-        }
-        else
-        {
-            button.setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
-            button.setColour(juce::TextButton::textColourOffId, colour);
-        }
-    };
+    // Ensure we have the right number of buttons
+    if (probeButtons.size() != availableProbes.size()) {
+        // Button count mismatch - should call updateFromProbeRegistry instead
+        return;
+    }
 
-    highlightButton(probeOscButton, activeProbe == vizasynth::ProbePoint::Oscillator,
-                    vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::Oscillator));
-    highlightButton(probeFilterButton, activeProbe == vizasynth::ProbePoint::PostFilter,
-                    vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::PostFilter));
-    highlightButton(probeOutputButton, activeProbe == vizasynth::ProbePoint::Output,
-                    vizasynth::Oscilloscope::getProbeColour(vizasynth::ProbePoint::Output));
+    // Update highlighting for each button
+    for (size_t i = 0; i < probeButtons.size(); ++i) {
+        auto& button = probeButtons[i];
+        const auto& probe = availableProbes[i];
+        bool isActive = (probe.id == activeProbeId);
+
+        if (isActive) {
+            button->setColour(juce::TextButton::buttonColourId, probe.color.darker(0.3f));
+            button->setColour(juce::TextButton::textColourOffId, config.getTextHighlightColour());
+        } else {
+            button->setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
+            button->setColour(juce::TextButton::textColourOffId, probe.color);
+        }
+    }
 }
 
 void VizASynthAudioProcessorEditor::setVisualizationMode(VisualizationMode mode)
@@ -938,5 +938,69 @@ void VizASynthAudioProcessorEditor::updateVisualizationMode()
     timeWindowSlider.setAlpha(isScope ? 1.0f : 0.4f);
 
     // Re-layout the visualization area
+    resized();
+}
+
+//==============================================================================
+// ProbeRegistryListener implementation
+
+void VizASynthAudioProcessorEditor::onProbeRegistered(const std::string& probeId)
+{
+    // Rebuild all probe buttons when a new probe is registered
+    juce::MessageManager::callAsync([this]() {
+        updateFromProbeRegistry();
+    });
+}
+
+void VizASynthAudioProcessorEditor::onProbeUnregistered(const std::string& probeId)
+{
+    // Rebuild all probe buttons when a probe is unregistered
+    juce::MessageManager::callAsync([this]() {
+        updateFromProbeRegistry();
+    });
+}
+
+void VizASynthAudioProcessorEditor::onActiveProbeChanged(const std::string& probeId)
+{
+    // Update button highlighting when active probe changes
+    juce::MessageManager::callAsync([this]() {
+        updateProbeButtons();
+    });
+}
+
+void VizASynthAudioProcessorEditor::updateFromProbeRegistry()
+{
+    auto& config = vizasynth::ConfigurationManager::getInstance();
+    auto& registry = audioProcessor.getProbeRegistry();
+    auto availableProbes = registry.getAvailableProbes();
+
+    // Remove existing probe buttons
+    for (auto& button : probeButtons) {
+        removeChildComponent(button.get());
+    }
+    probeButtons.clear();
+
+    // Create new buttons for each registered probe
+    for (const auto& probe : availableProbes) {
+        auto button = std::make_unique<juce::TextButton>(probe.displayName);
+        button->setClickingTogglesState(false);
+        button->setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
+        button->setColour(juce::TextButton::textColourOffId, probe.color);
+
+        // Capture probe ID for the click handler
+        auto probeId = probe.id;
+        button->onClick = [this, probeId]() {
+            audioProcessor.getProbeRegistry().setActiveProbe(probeId);
+            updateProbeButtons();
+        };
+
+        addAndMakeVisible(*button);
+        probeButtons.push_back(std::move(button));
+    }
+
+    // Update button highlighting based on active probe
+    updateProbeButtons();
+
+    // Re-layout to accommodate new buttons
     resized();
 }

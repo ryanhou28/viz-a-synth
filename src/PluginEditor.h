@@ -14,6 +14,7 @@
 #include "UI/VirtualKeyboard.h"
 #include "Core/Configuration.h"
 #include "Visualization/SignalFlow/SignalFlowView.h"
+#include "Visualization/ProbeRegistry.h"
 #include "UI/ChainEditor.h"
 
 //==============================================================================
@@ -37,7 +38,8 @@ enum class VisualizationMode
  */
 class VizASynthAudioProcessorEditor : public juce::AudioProcessorEditor,
                                        private juce::Timer,
-                                       public juce::ChangeListener
+                                       public juce::ChangeListener,
+                                       public vizasynth::ProbeRegistryListener
 {
 public:
     VizASynthAudioProcessorEditor(VizASynthAudioProcessor&);
@@ -50,6 +52,13 @@ public:
 private:
     void timerCallback() override;
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+
+    // ProbeRegistryListener interface
+    void onProbeRegistered(const std::string& probeId) override;
+    void onProbeUnregistered(const std::string& probeId) override;
+    void onActiveProbeChanged(const std::string& probeId) override;
+
+    void updateFromProbeRegistry();
     void updateProbeButtons();
     void updateVisualizationMode();
     void setVisualizationMode(VisualizationMode mode);
@@ -82,10 +91,8 @@ private:
     juce::TextButton transferFunctionButton{"H(z)"};
     juce::TextButton impulseResponseButton{"h[n]"};
 
-    // Probe selector buttons
-    juce::TextButton probeOscButton{"OSC"};
-    juce::TextButton probeFilterButton{"FILT"};
-    juce::TextButton probeOutputButton{"OUT"};
+    // Dynamic probe selector buttons (generated from ProbeRegistry)
+    std::vector<std::unique_ptr<juce::TextButton>> probeButtons;
     juce::TextButton freezeButton{"Freeze"};
     juce::TextButton clearTraceButton{"Clear"};
 
