@@ -1,5 +1,6 @@
 #include "ChainEditor.h"
 #include <algorithm>
+#include <limits>
 
 namespace vizasynth {
 
@@ -61,6 +62,24 @@ std::string ChainEditor::addNode(const std::string& moduleType, juce::Point<floa
 
     nodeVisuals.push_back(visual);
 
+    // Register probe for this node
+    if (probeRegistry && currentGraph) {
+        auto* graphNode = currentGraph->getNode(nodeId);
+        if (graphNode) {
+            auto* probeBuffer = graphNode->getProbeBuffer();
+            if (probeBuffer) {
+                std::string probeId = nodeId + ".output";
+                std::string displayName = nodeId;
+                std::string processingType = getProcessingType(moduleType);
+                juce::Colour color = visual.color;
+                int orderIndex = static_cast<int>(nodeVisuals.size()) * 10;
+
+                probeRegistry->registerProbe(probeId, displayName, processingType,
+                                            probeBuffer, color, orderIndex);
+            }
+        }
+    }
+
     notifyGraphModified();
     repaint();
 
@@ -71,6 +90,12 @@ bool ChainEditor::removeNode(const std::string& nodeId)
 {
     if (!currentGraph || isReadOnly) {
         return false;
+    }
+
+    // Unregister probe BEFORE removing from graph
+    if (probeRegistry) {
+        std::string probeId = nodeId + ".output";
+        probeRegistry->unregisterProbe(probeId);
     }
 
     // Remove from graph
@@ -310,6 +335,15 @@ void ChainEditor::mouseDown(const juce::MouseEvent& event)
 
     auto canvasPos = event.position - canvasArea.getTopLeft().toFloat();
 
+    // Check for right-click on connection
+    if (event.mods.isPopupMenu()) {
+        auto* conn = findConnectionAt(canvasPos);
+        if (conn) {
+            showConnectionContextMenu(*conn, event.getMouseDownScreenPosition());
+            return;
+        }
+    }
+
     // Check if clicking on a node
     auto* node = findNodeAt(canvasPos);
     if (node) {
@@ -405,12 +439,23 @@ void ChainEditor::mouseMove(const juce::MouseEvent& event)
 
     auto canvasPos = event.position - canvasArea.getTopLeft().toFloat();
 
-    // Update hover state
+    // Update hover state for nodes
     std::string newHoveredId;
     auto* node = findNodeAt(canvasPos);
     if (node) {
         newHoveredId = node->id;
     }
+
+    // Update hover state for connections
+    ConnectionVisual* previousHoveredConn = hoveredConnection;
+    hoveredConnection = findConnectionAt(canvasPos);
+
+    // Update connection hover states
+    for (auto& conn : connectionVisuals) {
+        conn.isHovered = (&conn == hoveredConnection);
+    }
+
+    bool needsRepaint = false;
 
     if (newHoveredId != hoveredNodeId) {
         // Clear previous hover
@@ -418,8 +463,18 @@ void ChainEditor::mouseMove(const juce::MouseEvent& event)
             n.isHovered = (n.id == newHoveredId);
         }
         hoveredNodeId = newHoveredId;
-        repaint();
-    } else if (wasHovered != isCloseButtonHovered) {
+        needsRepaint = true;
+    }
+
+    if (previousHoveredConn != hoveredConnection) {
+        needsRepaint = true;
+    }
+
+    if (wasHovered != isCloseButtonHovered) {
+        needsRepaint = true;
+    }
+
+    if (needsRepaint) {
         repaint();
     }
 }
@@ -439,6 +494,28 @@ bool ChainEditor::keyPressed(const juce::KeyPress& key)
     }
 
     return false;
+}
+
+void ChainEditor::showConnectionContextMenu(const ConnectionVisual& conn, juce::Point<int> position)
+{
+    juce::PopupMenu menu;
+    menu.addItem(1, "Delete Connection");
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+        juce::Rectangle<int>(position.x, position.y, 1, 1)),
+        [this, sourceId = conn.sourceNodeId, destId = conn.destNodeId](int result) {
+            if (result == 1) {
+                disconnectNodes(sourceId, destId);
+            }
+        });
+}
+
+std::string ChainEditor::getProcessingType(const std::string& moduleType) const
+{
+    if (moduleType == "oscillator") return "Signal Generator";
+    if (moduleType == "filter") return "LTI System";
+    if (moduleType == "mixer") return "Signal Combiner";
+    return "DSP Module";
 }
 
 //=============================================================================
@@ -479,6 +556,12 @@ void ChainEditor::rebuildVisualsFromGraph()
         }
     });
 
+    // Mark the output node
+    auto outputId = currentGraph->getOutputNode();
+    for (auto& visual : nodeVisuals) {
+        visual.isOutputNode = (visual.id == outputId);
+    }
+
     // Create visuals for connections
     auto connections = currentGraph->getConnections();
     for (const auto& conn : connections) {
@@ -504,8 +587,57 @@ ChainEditor::NodeVisual* ChainEditor::findNodeAt(juce::Point<float> position)
 
 ChainEditor::ConnectionVisual* ChainEditor::findConnectionAt(juce::Point<float> position)
 {
-    // TODO: Implement hit testing for curves
-    (void)position;
+    const float hitThreshold = 10.0f;  // Pixels - how close must click be to curve
+
+    for (auto& conn : connectionVisuals) {
+        // Find source and dest nodes
+        auto source = std::find_if(nodeVisuals.begin(), nodeVisuals.end(),
+                                     [&conn](const NodeVisual& n) {
+                                         return n.id == conn.sourceNodeId;
+                                     });
+        auto dest = std::find_if(nodeVisuals.begin(), nodeVisuals.end(),
+                                   [&conn](const NodeVisual& n) {
+                                       return n.id == conn.destNodeId;
+                                   });
+
+        if (source == nodeVisuals.end() || dest == nodeVisuals.end()) {
+            continue;
+        }
+
+        // Get connection endpoints in canvas coordinates
+        juce::Point<float> start = getNodeOutputPort(*source);
+        juce::Point<float> end = getNodeInputPort(*dest);
+
+        // Build the bezier curve path (same as drawConnectionCurve)
+        juce::Path path;
+        path.startNewSubPath(start);
+
+        float midX = (start.x + end.x) / 2;
+        juce::Point<float> cp1(midX, start.y);
+        juce::Point<float> cp2(midX, end.y);
+
+        path.cubicTo(cp1, cp2, end);
+
+        // Check if position is near the curve
+        // Sample along the path and find minimum distance
+        float minDistance = std::numeric_limits<float>::max();
+        const int samples = 20;  // Number of points to test along curve
+
+        for (int i = 0; i <= samples; ++i) {
+            float t = i / static_cast<float>(samples);
+            auto point = path.getPointAlongPath(path.getLength() * t);
+            float distance = position.getDistanceFrom(point);
+
+            if (distance < minDistance) {
+                minDistance = distance;
+            }
+        }
+
+        if (minDistance < hitThreshold) {
+            return &conn;
+        }
+    }
+
     return nullptr;
 }
 
@@ -560,6 +692,23 @@ void ChainEditor::drawNode(juce::Graphics& g, const NodeVisual& node)
     g.setColour(juce::Colours::red);
     g.fillEllipse(outputPort.x - portRadius, outputPort.y - portRadius,
                   portRadius * 2, portRadius * 2);
+
+    // Draw output node indicator
+    if (node.isOutputNode) {
+        // Gold border to indicate output node
+        g.setColour(juce::Colours::gold);
+        g.drawRoundedRectangle(bounds.expanded(3), 10.0f, 3.0f);
+
+        // "OUTPUT" label below the node
+        g.setFont(10.0f);
+        auto labelBounds = juce::Rectangle<float>(
+            bounds.getX(),
+            bounds.getBottom() + 2,
+            bounds.getWidth(),
+            12
+        );
+        g.drawText("OUTPUT", labelBounds, juce::Justification::centred);
+    }
 }
 
 void ChainEditor::drawConnection(juce::Graphics& g, const ConnectionVisual& conn)
@@ -582,7 +731,13 @@ void ChainEditor::drawConnection(juce::Graphics& g, const ConnectionVisual& conn
     juce::Point<float> start = getNodeOutputPort(*source).translated(offset.x, offset.y);
     juce::Point<float> end = getNodeInputPort(*dest).translated(offset.x, offset.y);
 
-    drawConnectionCurve(g, start, end, conn.color);
+    // Highlight hovered connections
+    juce::Colour color = conn.color;
+    if (conn.isHovered) {
+        color = color.brighter(0.5f);
+    }
+
+    drawConnectionCurve(g, start, end, color);
 }
 
 void ChainEditor::drawConnectionCurve(juce::Graphics& g,

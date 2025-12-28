@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../DSP/SignalGraph.h"
 #include "../DSP/SignalNodeFactory.h"
+#include "../Visualization/ProbeRegistry.h"
 #include <memory>
 #include <vector>
 #include <functional>
@@ -64,6 +65,12 @@ public:
      */
     void setGraph(SignalGraph* graph);
     SignalGraph* getGraph() const { return currentGraph; }
+
+    /**
+     * Set the ProbeRegistry for dynamic probe registration.
+     * When set, added/removed nodes will register/unregister their probes automatically.
+     */
+    void setProbeRegistry(ProbeRegistry* registry) { probeRegistry = registry; }
 
     /**
      * Callback invoked when the graph is modified (node added/removed/connected).
@@ -186,6 +193,7 @@ private:
         bool isSelected = false;
         bool isHovered = false;
         bool isDragging = false;
+        bool isOutputNode = false;  // True if this is the graph's output node
 
         // Metadata
         int numInputs = 1;
@@ -281,6 +289,7 @@ private:
     //=========================================================================
 
     SignalGraph* currentGraph = nullptr;
+    ProbeRegistry* probeRegistry = nullptr;
     GraphModifiedCallback onGraphModified;
     CloseCallback onClose;
 
@@ -290,6 +299,7 @@ private:
     DragState dragState;
     std::string selectedNodeId;
     std::string hoveredNodeId;
+    ConnectionVisual* hoveredConnection = nullptr;
 
     // UI state
     bool isReadOnly = false;
@@ -325,6 +335,10 @@ private:
 
     NodeVisual* findNodeAt(juce::Point<float> position);
     ConnectionVisual* findConnectionAt(juce::Point<float> position);
+
+    void showConnectionContextMenu(const ConnectionVisual& conn, juce::Point<int> position);
+
+    std::string getProcessingType(const std::string& moduleType) const;
 
     juce::Point<float> getNodeInputPort(const NodeVisual& node) const;
     juce::Point<float> getNodeOutputPort(const NodeVisual& node) const;

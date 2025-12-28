@@ -58,6 +58,10 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
         updateProbeButtons();
     });
 
+    // Connect SignalFlowView to ProbeRegistry for dynamic probe visualization
+    signalFlowView.setProbeRegistry(&audioProcessor.getProbeRegistry());
+    signalFlowView.updateFromProbeRegistry();
+
     // Setup visualization mode selector buttons
     scopeButton.setClickingTogglesState(false);
     scopeButton.setColour(juce::TextButton::buttonColourId, config.getAccentColour());
@@ -300,6 +304,9 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
         chainEditorButton.setToggleState(false, juce::dontSendNotification);
         resized();
     });
+
+    // Connect ChainEditor to ProbeRegistry for automatic probe registration
+    chainEditor.setProbeRegistry(&audioProcessor.getProbeRegistry());
 
     chainEditor.setVisible(false);
     addAndMakeVisible(chainEditor);
