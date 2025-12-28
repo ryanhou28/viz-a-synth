@@ -1,9 +1,9 @@
 {
   "window": {
-    "width": 1200,
-    "height": 800,
-    "minWidth": 900,
-    "minHeight": 600,
+    "width": 1280,
+    "height": 850,
+    "minWidth": 1000,
+    "minHeight": 700,
     "resizable": true
   },
   "layout": {
@@ -42,36 +42,46 @@
       "titleWidthOffset": 0
     },
     "leftPanel": {
-      "width": 370
+      "width": 380
     },
     "oscillatorPanel": {
       "x": 30,
       "y": 80,
-      "width": 320,
-      "height": 80,
-      "comboOffsetX": 30,
-      "comboX": 120,
-      "comboWidth": 170,
-      "comboHeight": 32,
+      "width": 340,
+      "height": 115,
+      "comboOffsetX": 10,
+      "comboX": 100,
+      "comboWidth": 190,
+      "comboHeight": 28,
       "comboYOffset": -2,
       "labelHeight": 22,
-      "comboY": 40
+      "comboY": 35,
+      "nodeSelectorWidth": 65,
+      "detuneSliderWidth": 100,
+      "octaveSliderWidth": 70,
+      "secondRowYOffset": 35
     },
     "filterPanel": {
-      "width": 320,
+      "width": 340,
       "height": 150,
       "knobSize": 80,
       "knobSpacing": 80,
       "knobYOffset": 2,
-      "knob1X": 80,
-      "knob2X": 200,
+      "knob1X": 100,
+      "knob2X": 220,
       "labelYOffset": 38,
       "textBoxWidth": 60,
-      "textBoxHeight": 20
+      "textBoxHeight": 20,
+      "nodeSelectorWidth": 75,
+      "nodeSelectorY": 10,
+      "typeX": 18,
+      "typeWidth": 55,
+      "typeYOffset": 15,
+      "typeHeight": 30
     },
     "envelopePanel": {
-      "width": 320,
-      "height": 260,
+      "width": 340,
+      "height": 250,
       "knobSize": 80,
       "knobSpacing": 0,
       "knobStartX": 28,

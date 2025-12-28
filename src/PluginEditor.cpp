@@ -1,5 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "DSP/Oscillators/OscillatorSource.h"
+#include "DSP/Oscillators/PolyBLEPOscillator.h"
 
 //==============================================================================
 VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProcessor& p)
@@ -159,6 +161,12 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     // Update probe button states
     updateProbeButtons();
 
+    // Setup oscillator node selector (Phase 2)
+    oscNodeSelector.addItem("Osc 1", 1);  // Default oscillator
+    oscNodeSelector.setSelectedId(1, juce::dontSendNotification);
+    oscNodeSelector.onChange = [this]() { onOscillatorSelected(); };
+    addAndMakeVisible(oscNodeSelector);
+
     // Setup oscillator type combo box
     oscTypeCombo.addItem("Sine", 1);
     oscTypeCombo.addItem("Saw", 2);
@@ -173,6 +181,55 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     bandLimitedToggle.setButtonText("PolyBLEP");
     bandLimitedToggle.setTooltip("Enable band-limited oscillator (PolyBLEP)\nDisable to hear aliasing artifacts");
     addAndMakeVisible(bandLimitedToggle);
+
+    // Setup detune slider (Phase 2.4)
+    detuneSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    detuneSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
+    detuneSlider.setRange(-100.0, 100.0, 1.0);
+    detuneSlider.setValue(0.0);
+    detuneSlider.setTextValueSuffix(" ct");
+    detuneSlider.onValueChange = [this]() {
+        // Update the selected oscillator's detune
+        if (auto* graph = audioProcessor.getVoiceGraph()) {
+            if (auto* node = graph->getNode(selectedOscillatorId)) {
+                if (auto* osc = dynamic_cast<vizasynth::OscillatorSource*>(node)) {
+                    osc->setDetuneCents(static_cast<float>(detuneSlider.getValue()));
+                }
+            }
+        }
+    };
+    addAndMakeVisible(detuneSlider);
+
+    detuneLabel.setText("Detune", juce::dontSendNotification);
+    detuneLabel.setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(detuneLabel);
+
+    // Setup octave slider (Phase 2.4)
+    octaveSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    octaveSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 35, 20);
+    octaveSlider.setRange(-2.0, 2.0, 1.0);
+    octaveSlider.setValue(0.0);
+    octaveSlider.onValueChange = [this]() {
+        // Update the selected oscillator's octave
+        if (auto* graph = audioProcessor.getVoiceGraph()) {
+            if (auto* node = graph->getNode(selectedOscillatorId)) {
+                if (auto* osc = dynamic_cast<vizasynth::OscillatorSource*>(node)) {
+                    osc->setOctaveOffset(static_cast<int>(octaveSlider.getValue()));
+                }
+            }
+        }
+    };
+    addAndMakeVisible(octaveSlider);
+
+    octaveLabel.setText("Octave", juce::dontSendNotification);
+    octaveLabel.setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(octaveLabel);
+
+    // Setup filter node selector (Phase 2)
+    filterNodeSelector.addItem("Filter 1", 1);  // Default filter
+    filterNodeSelector.setSelectedId(1, juce::dontSendNotification);
+    filterNodeSelector.onChange = [this]() { onFilterSelected(); };
+    addAndMakeVisible(filterNodeSelector);
 
     // Setup filter type combo box
     filterTypeCombo.addItem("LP", 1);   // Lowpass
@@ -352,6 +409,14 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     // Apply theme colors to all components
     applyThemeToComponents();
 
+    // Register as SignalGraph listener for node selector updates (Phase 2)
+    if (auto* voiceGraph = audioProcessor.getVoiceGraph()) {
+        voiceGraph->addListener(this);
+    }
+
+    // Initialize node selectors from current graph state
+    updateNodeSelectors();
+
     // Start timer for UI updates (60 FPS)
     startTimerHz(60);
 }
@@ -361,6 +426,11 @@ VizASynthAudioProcessorEditor::~VizASynthAudioProcessorEditor()
     stopTimer();
     vizasynth::ConfigurationManager::getInstance().removeChangeListener(this);
     audioProcessor.getProbeRegistry().removeListener(this);
+
+    // Unregister from SignalGraph
+    if (auto* voiceGraph = audioProcessor.getVoiceGraph()) {
+        voiceGraph->removeListener(this);
+    }
 }
 
 //==============================================================================
@@ -573,18 +643,46 @@ void VizASynthAudioProcessorEditor::resized()
     int envY = filterY + layout.filterPanelH + layout.panelSpacing;
 
     // Oscillator section (centered vertically in osc panel)
-    int oscComboY = oscY + config.getLayoutInt("components.oscillatorPanel.comboY", 40);
-    oscTypeLabel.setBounds(panelX + layout.panelInnerMargin + layout.oscComboOffsetX, oscComboY, 100, layout.labelHeight);
-    oscTypeCombo.setBounds(panelX + layout.oscComboX + layout.oscComboOffsetX, oscComboY + config.getLayoutInt("components.oscillatorPanel.comboYOffset", -2), layout.oscComboWidth - 80, layout.comboHeight);
+    int oscComboY = oscY + config.getLayoutInt("components.oscillatorPanel.comboY", 35);
+    int oscComboYOffset = config.getLayoutInt("components.oscillatorPanel.comboYOffset", -2);
+    int nodeSelectorWidth = config.getLayoutInt("components.oscillatorPanel.nodeSelectorWidth", 65);
+
+    // Node selector at the far left (Phase 2)
+    int oscSelectorX = panelX + layout.panelInnerMargin;
+    oscNodeSelector.setBounds(oscSelectorX, oscComboY + oscComboYOffset, nodeSelectorWidth, layout.comboHeight);
+
+    // Label and type combo to the right of selector
+    int oscLabelX = oscSelectorX + nodeSelectorWidth + 5;
+    oscTypeLabel.setBounds(oscLabelX, oscComboY, 65, layout.labelHeight);
+    int oscComboX = oscLabelX + 65;
+    oscTypeCombo.setBounds(oscComboX, oscComboY + oscComboYOffset, 70, layout.comboHeight);
 
     // Band-limiting toggle (PolyBLEP) - positioned to the right of oscillator type
-    int bandLimitedX = panelX + layout.oscComboX + layout.oscComboOffsetX + layout.oscComboWidth - 70;
-    int bandLimitedY = oscComboY + config.getLayoutInt("components.oscillatorPanel.comboYOffset", -2);
-    bandLimitedToggle.setBounds(bandLimitedX, bandLimitedY, 75, layout.comboHeight);
+    int bandLimitedX = oscComboX + 75;
+    bandLimitedToggle.setBounds(bandLimitedX, oscComboY + oscComboYOffset, 80, layout.comboHeight);
+
+    // Detune and Octave controls (Phase 2.4) - below waveform row
+    int secondRowYOffset = config.getLayoutInt("components.oscillatorPanel.secondRowYOffset", 35);
+    int oscSecondRowY = oscComboY + secondRowYOffset;
+    int detuneWidth = config.getLayoutInt("components.oscillatorPanel.detuneSliderWidth", 100);
+    int octaveWidth = config.getLayoutInt("components.oscillatorPanel.octaveSliderWidth", 70);
+    int labelWidth = 45;
+
+    detuneLabel.setBounds(oscSelectorX, oscSecondRowY, labelWidth, 20);
+    detuneSlider.setBounds(oscSelectorX + labelWidth, oscSecondRowY, detuneWidth, 20);
+
+    int octaveLabelX = oscSelectorX + labelWidth + detuneWidth + 8;
+    octaveLabel.setBounds(octaveLabelX, oscSecondRowY, labelWidth, 20);
+    octaveSlider.setBounds(octaveLabelX + labelWidth, oscSecondRowY, octaveWidth, 20);
 
     // Filter section (centered vertically in filter panel)
     int filterLabelY = filterY + layout.filterLabelYOffset;
     int filterKnobY = filterLabelY + layout.labelHeight + layout.filterKnobYOffset;
+
+    // Filter node selector (Phase 2) - at top of filter section
+    int filterSelectorY = filterY + config.getLayoutInt("components.filterPanel.nodeSelectorY", 10);
+    int filterNodeSelectorWidth = config.getLayoutInt("components.filterPanel.nodeSelectorWidth", 75);
+    filterNodeSelector.setBounds(panelX + layout.panelInnerMargin, filterSelectorY, filterNodeSelectorWidth, layout.comboHeight);
 
     // Filter type combo box (positioned to the left of cutoff knob)
     int filterTypeX = panelX + config.getLayoutInt("components.filterPanel.typeX", 18);
@@ -962,9 +1060,18 @@ void VizASynthAudioProcessorEditor::onProbeUnregistered(const std::string& probe
 
 void VizASynthAudioProcessorEditor::onActiveProbeChanged(const std::string& probeId)
 {
+    // Debounce: prevent rapid updates that cause flashing
+    juce::int64 currentTime = juce::Time::currentTimeMillis();
+    if (currentTime - lastProbeUpdateTime < kProbeUpdateDebounceMs) {
+        return;  // Skip this update - too soon after the last one
+    }
+    lastProbeUpdateTime = currentTime;
+
     // Update button highlighting when active probe changes
     juce::MessageManager::callAsync([this]() {
-        updateProbeButtons();
+        if (!isUpdatingProbeSelection) {
+            updateProbeButtons();
+        }
     });
 }
 
@@ -990,8 +1097,11 @@ void VizASynthAudioProcessorEditor::updateFromProbeRegistry()
         // Capture probe ID for the click handler
         auto probeId = probe.id;
         button->onClick = [this, probeId]() {
+            // Set flag to prevent cascading updates during selection
+            isUpdatingProbeSelection = true;
             audioProcessor.getProbeRegistry().setActiveProbe(probeId);
             updateProbeButtons();
+            isUpdatingProbeSelection = false;
         };
 
         addAndMakeVisible(*button);
@@ -1003,4 +1113,178 @@ void VizASynthAudioProcessorEditor::updateFromProbeRegistry()
 
     // Re-layout to accommodate new buttons
     resized();
+}
+
+//==============================================================================
+// SignalGraphListener implementation
+
+void VizASynthAudioProcessorEditor::onNodeAdded(const std::string& nodeId, const std::string& nodeType)
+{
+    // Update node selectors when a new node is added
+    juce::MessageManager::callAsync([this]() {
+        updateNodeSelectors();
+    });
+}
+
+void VizASynthAudioProcessorEditor::onNodeRemoved(const std::string& nodeId)
+{
+    // Update node selectors and check if selected node was removed
+    juce::MessageManager::callAsync([this, nodeId]() {
+        // If removed node was selected, select another one
+        if (selectedOscillatorId == nodeId) {
+            selectedOscillatorId = "osc1";  // Reset to default
+        }
+        if (selectedFilterId == nodeId) {
+            selectedFilterId = "filter1";  // Reset to default
+        }
+        updateNodeSelectors();
+    });
+}
+
+void VizASynthAudioProcessorEditor::onConnectionAdded(const std::string& /*sourceId*/, const std::string& /*destId*/)
+{
+    // Connections don't affect node selectors, but could update SignalFlowView
+}
+
+void VizASynthAudioProcessorEditor::onConnectionRemoved(const std::string& /*sourceId*/, const std::string& /*destId*/)
+{
+    // Connections don't affect node selectors, but could update SignalFlowView
+}
+
+void VizASynthAudioProcessorEditor::onGraphStructureChanged()
+{
+    // Full graph reset - rebuild selectors
+    juce::MessageManager::callAsync([this]() {
+        updateNodeSelectors();
+    });
+}
+
+//==============================================================================
+// Node selection helpers
+
+void VizASynthAudioProcessorEditor::updateNodeSelectors()
+{
+    auto* graph = audioProcessor.getVoiceGraph();
+    if (!graph) return;
+
+    // Update oscillator selector
+    oscNodeSelector.clear(juce::dontSendNotification);
+    int oscItemId = 1;
+    int selectedOscItemId = 1;
+
+    graph->forEachNode([this, &oscItemId, &selectedOscItemId](const std::string& nodeId, const vizasynth::SignalNode* node) {
+        if (dynamic_cast<const vizasynth::OscillatorSource*>(node) != nullptr) {
+            // Create display name (e.g., "Osc 1" from "osc1")
+            std::string displayName = node->getName();
+            if (displayName.length() > 10) {
+                displayName = displayName.substr(0, 10);
+            }
+            oscNodeSelector.addItem(displayName, oscItemId);
+
+            if (nodeId == selectedOscillatorId) {
+                selectedOscItemId = oscItemId;
+            }
+            oscItemId++;
+        }
+    });
+
+    if (oscNodeSelector.getNumItems() > 0) {
+        oscNodeSelector.setSelectedId(selectedOscItemId, juce::dontSendNotification);
+    }
+
+    // Update filter selector
+    filterNodeSelector.clear(juce::dontSendNotification);
+    int filterItemId = 1;
+    int selectedFilterItemId = 1;
+
+    graph->forEachNode([this, &filterItemId, &selectedFilterItemId](const std::string& nodeId, const vizasynth::SignalNode* node) {
+        // Check if it's a filter (has LTI analysis support)
+        if (node->supportsAnalysis() && node->isLTI()) {
+            std::string displayName = node->getName();
+            if (displayName.length() > 10) {
+                displayName = displayName.substr(0, 10);
+            }
+            filterNodeSelector.addItem(displayName, filterItemId);
+
+            if (nodeId == selectedFilterId) {
+                selectedFilterItemId = filterItemId;
+            }
+            filterItemId++;
+        }
+    });
+
+    if (filterNodeSelector.getNumItems() > 0) {
+        filterNodeSelector.setSelectedId(selectedFilterItemId, juce::dontSendNotification);
+    }
+
+    // Update panel controls to reflect selected nodes
+    updateOscillatorPanel();
+    updateFilterPanel();
+}
+
+void VizASynthAudioProcessorEditor::updateOscillatorPanel()
+{
+    auto* graph = audioProcessor.getVoiceGraph();
+    if (!graph) return;
+
+    auto* node = graph->getNode(selectedOscillatorId);
+    if (auto* osc = dynamic_cast<vizasynth::OscillatorSource*>(node)) {
+        // Update detune/octave sliders to match selected oscillator
+        detuneSlider.setValue(osc->getDetuneCents(), juce::dontSendNotification);
+        octaveSlider.setValue(osc->getOctaveOffset(), juce::dontSendNotification);
+
+        // Update waveform combo if it's a PolyBLEP oscillator
+        if (auto* polyblep = dynamic_cast<vizasynth::PolyBLEPOscillator*>(osc)) {
+            int waveformIndex = static_cast<int>(polyblep->getWaveform());
+            oscTypeCombo.setSelectedId(waveformIndex + 1, juce::dontSendNotification);
+        }
+    }
+}
+
+void VizASynthAudioProcessorEditor::updateFilterPanel()
+{
+    // Filter panel updates would be similar to oscillator
+    // For now, the filter parameters are connected via APVTS attachments
+}
+
+void VizASynthAudioProcessorEditor::onOscillatorSelected()
+{
+    // Find the node ID corresponding to the selected combo box item
+    auto* graph = audioProcessor.getVoiceGraph();
+    if (!graph) return;
+
+    int selectedItem = oscNodeSelector.getSelectedItemIndex();
+    int currentIndex = 0;
+
+    graph->forEachNode([this, &currentIndex, selectedItem](const std::string& nodeId, const vizasynth::SignalNode* node) {
+        if (dynamic_cast<const vizasynth::OscillatorSource*>(node) != nullptr) {
+            if (currentIndex == selectedItem) {
+                selectedOscillatorId = nodeId;
+            }
+            currentIndex++;
+        }
+    });
+
+    updateOscillatorPanel();
+}
+
+void VizASynthAudioProcessorEditor::onFilterSelected()
+{
+    // Find the node ID corresponding to the selected combo box item
+    auto* graph = audioProcessor.getVoiceGraph();
+    if (!graph) return;
+
+    int selectedItem = filterNodeSelector.getSelectedItemIndex();
+    int currentIndex = 0;
+
+    graph->forEachNode([this, &currentIndex, selectedItem](const std::string& nodeId, const vizasynth::SignalNode* node) {
+        if (node->supportsAnalysis() && node->isLTI()) {
+            if (currentIndex == selectedItem) {
+                selectedFilterId = nodeId;
+            }
+            currentIndex++;
+        }
+    });
+
+    updateFilterPanel();
 }

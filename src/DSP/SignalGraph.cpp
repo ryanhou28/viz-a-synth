@@ -47,8 +47,14 @@ SignalGraph::NodeId SignalGraph::addNode(std::unique_ptr<SignalNode> node, const
                                      color, orderIndex);
     }
 
+    // Get the node type before moving
+    std::string nodeType = graphNode.node ? graphNode.node->getName() : "";
+
     nodes.emplace(id, std::move(graphNode));
     markProcessingOrderDirty();
+
+    // Notify listeners of the new node
+    notifyNodeAdded(id, nodeType);
 
     return id;
 }
@@ -90,6 +96,9 @@ std::unique_ptr<SignalNode> SignalGraph::removeNode(const NodeId& id)
     nodes.erase(it);
     markProcessingOrderDirty();
 
+    // Notify listeners
+    notifyNodeRemoved(id);
+
     return node;
 }
 
@@ -113,11 +122,24 @@ bool SignalGraph::connect(const NodeId& sourceId, const NodeId& destId, int dest
         return true;
     }
 
+    // Validate connection using capability checks
+    std::string error = getConnectionError(sourceId, destId);
+    if (!error.empty()) {
+        #if JUCE_DEBUG
+        juce::Logger::writeToLog("SignalGraph::connect() rejected: " + juce::String(error));
+        #endif
+        return false;
+    }
+
     // Add connection
     source->outputs.push_back(destId);
     dest->inputs.push_back(sourceId);
 
     markProcessingOrderDirty();
+
+    // Notify listeners
+    notifyConnectionAdded(sourceId, destId);
+
     return true;
 }
 
@@ -139,6 +161,10 @@ bool SignalGraph::disconnect(const NodeId& sourceId, const NodeId& destId)
     inputs.erase(std::remove(inputs.begin(), inputs.end(), sourceId), inputs.end());
 
     markProcessingOrderDirty();
+
+    // Notify listeners
+    notifyConnectionRemoved(sourceId, destId);
+
     return true;
 }
 
@@ -170,6 +196,9 @@ void SignalGraph::clear()
     outputNodeId.clear();
     inputNodeId.clear();
     markProcessingOrderDirty();
+
+    // Notify listeners of major structural change
+    notifyGraphStructureChanged();
 }
 
 //=============================================================================
@@ -218,6 +247,77 @@ bool SignalGraph::isConnected(const NodeId& sourceId, const NodeId& destId) cons
     if (!source) return false;
 
     return std::find(source->outputs.begin(), source->outputs.end(), destId) != source->outputs.end();
+}
+
+bool SignalGraph::canConnect(const NodeId& sourceId, const NodeId& destId) const
+{
+    return getConnectionError(sourceId, destId).empty();
+}
+
+std::string SignalGraph::getConnectionError(const NodeId& sourceId, const NodeId& destId) const
+{
+    // Check nodes exist
+    const auto* source = getGraphNode(sourceId);
+    const auto* dest = getGraphNode(destId);
+
+    if (!source) {
+        return "Source node '" + sourceId + "' does not exist.";
+    }
+    if (!dest) {
+        return "Destination node '" + destId + "' does not exist.";
+    }
+    if (!source->node || !dest->node) {
+        return "Invalid node reference.";
+    }
+
+    // Check source can produce output
+    if (!source->node->canProduceOutput()) {
+        return "Node '" + sourceId + "' cannot produce output.";
+    }
+
+    // Check destination can accept input
+    if (!dest->node->canAcceptInput()) {
+        return dest->node->getInputRestrictionMessage();
+    }
+
+    // Check not already connected
+    if (isConnected(sourceId, destId)) {
+        return "Nodes are already connected.";
+    }
+
+    // Check self-connection
+    if (sourceId == destId) {
+        return "Cannot connect a node to itself.";
+    }
+
+    // Check for cycles - would this connection create a path from dest back to source?
+    // Use BFS to check if dest can already reach source
+    std::set<NodeId> visited;
+    std::queue<NodeId> toVisit;
+    toVisit.push(destId);
+
+    while (!toVisit.empty()) {
+        NodeId current = toVisit.front();
+        toVisit.pop();
+
+        if (current == sourceId) {
+            return "Connection would create a cycle in the signal graph.";
+        }
+
+        if (visited.count(current) > 0) continue;
+        visited.insert(current);
+
+        const auto* currentNode = getGraphNode(current);
+        if (currentNode) {
+            for (const auto& outputId : currentNode->outputs) {
+                if (visited.count(outputId) == 0) {
+                    toVisit.push(outputId);
+                }
+            }
+        }
+    }
+
+    return "";  // No errors - connection is valid
 }
 
 //=============================================================================
@@ -514,6 +614,73 @@ const SignalGraph::GraphNode* SignalGraph::getGraphNode(const NodeId& id) const
 void SignalGraph::markProcessingOrderDirty()
 {
     processingOrderDirty = true;
+}
+
+//=============================================================================
+// Listener Management
+//=============================================================================
+
+void SignalGraph::addListener(SignalGraphListener* listener)
+{
+    if (listener == nullptr) return;
+
+    auto it = std::find(graphListeners.begin(), graphListeners.end(), listener);
+    if (it == graphListeners.end()) {
+        graphListeners.push_back(listener);
+    }
+}
+
+void SignalGraph::removeListener(SignalGraphListener* listener)
+{
+    auto it = std::find(graphListeners.begin(), graphListeners.end(), listener);
+    if (it != graphListeners.end()) {
+        graphListeners.erase(it);
+    }
+}
+
+void SignalGraph::notifyNodeAdded(const NodeId& nodeId, const std::string& nodeType)
+{
+    for (auto* listener : graphListeners) {
+        if (listener != nullptr) {
+            listener->onNodeAdded(nodeId, nodeType);
+        }
+    }
+}
+
+void SignalGraph::notifyNodeRemoved(const NodeId& nodeId)
+{
+    for (auto* listener : graphListeners) {
+        if (listener != nullptr) {
+            listener->onNodeRemoved(nodeId);
+        }
+    }
+}
+
+void SignalGraph::notifyConnectionAdded(const NodeId& sourceId, const NodeId& destId)
+{
+    for (auto* listener : graphListeners) {
+        if (listener != nullptr) {
+            listener->onConnectionAdded(sourceId, destId);
+        }
+    }
+}
+
+void SignalGraph::notifyConnectionRemoved(const NodeId& sourceId, const NodeId& destId)
+{
+    for (auto* listener : graphListeners) {
+        if (listener != nullptr) {
+            listener->onConnectionRemoved(sourceId, destId);
+        }
+    }
+}
+
+void SignalGraph::notifyGraphStructureChanged()
+{
+    for (auto* listener : graphListeners) {
+        if (listener != nullptr) {
+            listener->onGraphStructureChanged();
+        }
+    }
 }
 
 //=============================================================================

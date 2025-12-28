@@ -37,13 +37,53 @@ public:
 
     /**
      * Set the oscillator frequency in Hz.
+     * Note: This sets the base frequency. Actual frequency is affected by detune and octave.
      */
     virtual void setFrequency(float hz) = 0;
 
     /**
      * Get the current frequency in Hz.
+     * Note: This returns the base frequency, not the actual (detuned) frequency.
      */
     virtual float getFrequency() const = 0;
+
+    /**
+     * Set the base frequency from MIDI note.
+     * This is called by the voice when a note starts.
+     * The actual frequency = baseFreq * 2^(octaveOffset + detuneCents/1200)
+     */
+    virtual void setBaseFrequency(float baseHz) { setFrequency(baseHz); }
+
+    /**
+     * Get the actual output frequency (after detune and octave).
+     */
+    virtual float getActualFrequency() const { return getFrequency(); }
+
+    //=========================================================================
+    // Detune and Octave Control
+    //=========================================================================
+
+    /**
+     * Set the octave offset (-2 to +2 octaves).
+     * Each octave doubles or halves the frequency.
+     */
+    virtual void setOctaveOffset(int octave) { (void)octave; }
+
+    /**
+     * Get the current octave offset.
+     */
+    virtual int getOctaveOffset() const { return 0; }
+
+    /**
+     * Set the detune in cents (-100 to +100).
+     * 100 cents = 1 semitone.
+     */
+    virtual void setDetuneCents(float cents) { (void)cents; }
+
+    /**
+     * Get the current detune in cents.
+     */
+    virtual float getDetuneCents() const { return 0.0f; }
 
     /**
      * Set the waveform type.
@@ -127,6 +167,14 @@ public:
     // Oscillators don't have traditional transfer functions in the LTI sense,
     // but we could provide spectral information. For now, analysis is not supported.
     bool supportsAnalysis() const override { return false; }
+
+    // Oscillators are signal sources - they generate signal, not process input
+    // Therefore they should not accept input connections
+    bool canAcceptInput() const override { return false; }
+
+    std::string getInputRestrictionMessage() const override {
+        return "Oscillators are signal sources and cannot accept input connections.";
+    }
 
     //=========================================================================
     // Utility

@@ -138,20 +138,32 @@ void VizASynthVoice::startNote(int midiNoteNumber, float vel, juce::SynthesiserS
     currentMidiNote = midiNoteNumber;
     velocity = vel;
 
-    // Set oscillator frequency
-    auto frequency = juce::MidiMessage::getMidiNoteInHertz(midiNoteNumber);
+    // Get base frequency from MIDI note
+    auto baseFrequency = juce::MidiMessage::getMidiNoteInHertz(midiNoteNumber);
+
+    // Set base frequency on all oscillators in the graph
+    // Each oscillator applies its own detune and octave offset
+    processingGraph.forEachNode([baseFrequency](const std::string& /*nodeId*/, SignalNode* node) {
+        if (auto* osc = dynamic_cast<OscillatorSource*>(node)) {
+            osc->setBaseFrequency(static_cast<float>(baseFrequency));
+        }
+    });
+
+    // Also set on the direct pointer for backward compatibility
     if (oscillator != nullptr)
-        oscillator->setFrequency(frequency);
+        oscillator->setBaseFrequency(static_cast<float>(baseFrequency));
 
     // Start envelope
     adsr.noteOn();
 
     // Set this as the active voice for probing (most recently triggered)
+    // Use the actual frequency of the primary oscillator for display
+    float displayFrequency = oscillator ? oscillator->getActualFrequency() : static_cast<float>(baseFrequency);
     if (probeManager != nullptr)
     {
         probeManager->setActiveVoice(voiceIndex);
-        probeManager->setActiveFrequency(static_cast<float>(frequency));
-        probeManager->setVoiceFrequency(voiceIndex, frequency);
+        probeManager->setActiveFrequency(displayFrequency);
+        probeManager->setVoiceFrequency(voiceIndex, displayFrequency);
     }
 }
 

@@ -16,6 +16,7 @@
 #include "Visualization/SignalFlow/SignalFlowView.h"
 #include "Visualization/ProbeRegistry.h"
 #include "UI/ChainEditor.h"
+#include "DSP/SignalGraph.h"
 
 //==============================================================================
 /**
@@ -39,7 +40,8 @@ enum class VisualizationMode
 class VizASynthAudioProcessorEditor : public juce::AudioProcessorEditor,
                                        private juce::Timer,
                                        public juce::ChangeListener,
-                                       public vizasynth::ProbeRegistryListener
+                                       public vizasynth::ProbeRegistryListener,
+                                       public vizasynth::SignalGraphListener
 {
 public:
     VizASynthAudioProcessorEditor(VizASynthAudioProcessor&);
@@ -58,11 +60,25 @@ private:
     void onProbeUnregistered(const std::string& probeId) override;
     void onActiveProbeChanged(const std::string& probeId) override;
 
+    // SignalGraphListener interface
+    void onNodeAdded(const std::string& nodeId, const std::string& nodeType) override;
+    void onNodeRemoved(const std::string& nodeId) override;
+    void onConnectionAdded(const std::string& sourceId, const std::string& destId) override;
+    void onConnectionRemoved(const std::string& sourceId, const std::string& destId) override;
+    void onGraphStructureChanged() override;
+
     void updateFromProbeRegistry();
     void updateProbeButtons();
     void updateVisualizationMode();
     void setVisualizationMode(VisualizationMode mode);
     void applyThemeToComponents();
+
+    // Node selection helpers
+    void updateNodeSelectors();
+    void updateOscillatorPanel();
+    void updateFilterPanel();
+    void onOscillatorSelected();
+    void onFilterSelected();
 
     VizASynthAudioProcessor& audioProcessor;
 
@@ -100,9 +116,19 @@ private:
     juce::Slider timeWindowSlider;
     juce::Label timeWindowLabel;
 
+    // Node selectors (Phase 2: select which node to control)
+    juce::ComboBox oscNodeSelector;
+    juce::ComboBox filterNodeSelector;
+    std::string selectedOscillatorId = "osc1";  // Currently selected oscillator
+    std::string selectedFilterId = "filter1";   // Currently selected filter
+
     // UI Components
     juce::ComboBox oscTypeCombo;
     juce::ToggleButton bandLimitedToggle{"PolyBLEP"};
+    juce::Slider detuneSlider;
+    juce::Slider octaveSlider;
+    juce::Label detuneLabel;
+    juce::Label octaveLabel;
     juce::ComboBox filterTypeCombo;
     juce::Slider cutoffSlider;
     juce::Slider resonanceSlider;
@@ -134,6 +160,11 @@ private:
     vizasynth::ChainEditor chainEditor;
     juce::TextButton chainEditorButton{"Chain Editor"};
     bool showChainEditor = false;
+
+    // Probe selection debouncing to prevent flashing
+    bool isUpdatingProbeSelection = false;
+    juce::int64 lastProbeUpdateTime = 0;
+    static constexpr int kProbeUpdateDebounceMs = 50;  // Minimum ms between updates
 
     // Parameter attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oscTypeAttachment;

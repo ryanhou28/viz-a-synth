@@ -4,6 +4,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <cmath>
 #include <vector>
+#include <algorithm>
 
 namespace vizasynth {
 
@@ -65,12 +66,43 @@ public:
     //=========================================================================
 
     void setFrequency(float hz) override {
-        frequency = hz;
-        updatePhaseIncrement();
+        baseFrequency = hz;
+        updateActualFrequency();
     }
 
     float getFrequency() const override {
-        return frequency;
+        return baseFrequency;
+    }
+
+    void setBaseFrequency(float baseHz) override {
+        baseFrequency = baseHz;
+        updateActualFrequency();
+    }
+
+    float getActualFrequency() const override {
+        return actualFrequency;
+    }
+
+    //=========================================================================
+    // Detune and Octave Control
+    //=========================================================================
+
+    void setOctaveOffset(int octave) override {
+        octaveOffset = std::clamp(octave, -2, 2);
+        updateActualFrequency();
+    }
+
+    int getOctaveOffset() const override {
+        return octaveOffset;
+    }
+
+    void setDetuneCents(float cents) override {
+        detuneCents = std::clamp(cents, -100.0f, 100.0f);
+        updateActualFrequency();
+    }
+
+    float getDetuneCents() const override {
+        return detuneCents;
     }
 
     void setWaveform(Waveform type) override {
@@ -127,7 +159,7 @@ public:
         for (int k = 1; k <= numHarmonics; ++k) {
             float magnitude = 0.0f;
             float phaseOffset = 0.0f;
-            float harmonicFreq = frequency * static_cast<float>(k);
+            float harmonicFreq = actualFrequency * static_cast<float>(k);
 
             switch (waveform) {
                 case Waveform::Sine:
@@ -216,9 +248,21 @@ public:
     }
 
 private:
+    /**
+     * Recalculate the actual frequency from base frequency, octave, and detune.
+     * Formula: actualFreq = baseFreq * 2^(octaveOffset + detuneCents/1200)
+     */
+    void updateActualFrequency() {
+        // Calculate frequency multiplier from octave and detune
+        // detuneCents/1200 converts cents to octaves (1200 cents = 1 octave)
+        float octaveMultiplier = std::pow(2.0f, static_cast<float>(octaveOffset) + detuneCents / 1200.0f);
+        actualFrequency = baseFrequency * octaveMultiplier;
+        updatePhaseIncrement();
+    }
+
     void updatePhaseIncrement() {
         if (currentSampleRate > 0.0) {
-            phaseIncrement = static_cast<double>(frequency) / currentSampleRate;
+            phaseIncrement = static_cast<double>(actualFrequency) / currentSampleRate;
         }
     }
 
@@ -283,7 +327,10 @@ private:
 
     double phase = 0.0;
     double phaseIncrement = 0.0;
-    float frequency = 440.0f;
+    float baseFrequency = 440.0f;      // Base frequency from MIDI note
+    float actualFrequency = 440.0f;    // Actual frequency after detune/octave
+    int octaveOffset = 0;              // Octave offset (-2 to +2)
+    float detuneCents = 0.0f;          // Detune in cents (-100 to +100)
     Waveform waveform = Waveform::Sine;
     bool bandLimited = true;
 

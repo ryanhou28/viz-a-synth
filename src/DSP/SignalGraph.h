@@ -16,6 +16,51 @@ namespace vizasynth {
 
 namespace vizasynth {
 
+// Forward declaration
+class SignalGraph;
+
+/**
+ * Listener interface for SignalGraph changes.
+ * Implement this interface to be notified when nodes are added/removed
+ * or connections change in the signal graph.
+ */
+class SignalGraphListener {
+public:
+    virtual ~SignalGraphListener() = default;
+
+    /**
+     * Called when a node is added to the graph.
+     * @param nodeId The ID of the newly added node
+     * @param nodeType The type name of the node (from getName())
+     */
+    virtual void onNodeAdded(const std::string& nodeId, const std::string& nodeType) = 0;
+
+    /**
+     * Called when a node is removed from the graph.
+     * @param nodeId The ID of the removed node
+     */
+    virtual void onNodeRemoved(const std::string& nodeId) = 0;
+
+    /**
+     * Called when a connection is added between nodes.
+     * @param sourceId Source node ID
+     * @param destId Destination node ID
+     */
+    virtual void onConnectionAdded(const std::string& sourceId, const std::string& destId) = 0;
+
+    /**
+     * Called when a connection is removed between nodes.
+     * @param sourceId Source node ID
+     * @param destId Destination node ID
+     */
+    virtual void onConnectionRemoved(const std::string& sourceId, const std::string& destId) = 0;
+
+    /**
+     * Called when the graph structure changes significantly (e.g., clear, bulk load).
+     */
+    virtual void onGraphStructureChanged() = 0;
+};
+
 /**
  * SignalGraph - A flexible signal routing graph supporting both series and parallel topologies
  *
@@ -181,6 +226,22 @@ public:
      */
     bool isConnected(const NodeId& sourceId, const NodeId& destId) const;
 
+    /**
+     * Check if a connection between two nodes is valid.
+     * Validates that:
+     *   - Source can produce output
+     *   - Destination can accept input
+     *   - Connection wouldn't create a cycle
+     * @return true if connection is valid
+     */
+    bool canConnect(const NodeId& sourceId, const NodeId& destId) const;
+
+    /**
+     * Get a human-readable error message explaining why a connection is invalid.
+     * Returns empty string if connection is valid.
+     */
+    std::string getConnectionError(const NodeId& sourceId, const NodeId& destId) const;
+
     //=========================================================================
     // Probe Support
     //=========================================================================
@@ -197,6 +258,22 @@ public:
     ProbeRegistry* getProbeRegistry() const { return probeRegistry; }
 
     void registerAllProbesWithRegistry();
+
+    //=========================================================================
+    // Graph Listener Management
+    //=========================================================================
+
+    /**
+     * Add a listener to be notified of graph changes.
+     * @param listener Pointer to listener (must remain valid until removed)
+     */
+    void addListener(SignalGraphListener* listener);
+
+    /**
+     * Remove a previously added listener.
+     * @param listener Pointer to the listener to remove
+     */
+    void removeListener(SignalGraphListener* listener);
 
     //=========================================================================
     // Processing (SignalNode Interface)
@@ -263,6 +340,16 @@ private:
     // Cached processing order (recomputed when topology changes)
     mutable std::vector<NodeId> processingOrder;
     mutable bool processingOrderDirty = true;
+
+    // Graph listeners
+    std::vector<SignalGraphListener*> graphListeners;
+
+    // Notification helper methods
+    void notifyNodeAdded(const NodeId& nodeId, const std::string& nodeType);
+    void notifyNodeRemoved(const NodeId& nodeId);
+    void notifyConnectionAdded(const NodeId& sourceId, const NodeId& destId);
+    void notifyConnectionRemoved(const NodeId& sourceId, const NodeId& destId);
+    void notifyGraphStructureChanged();
 
     // Helper methods
     GraphNode* getGraphNode(const NodeId& id);

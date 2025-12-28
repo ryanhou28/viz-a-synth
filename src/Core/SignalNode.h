@@ -168,6 +168,31 @@ public:
     virtual bool isLTI() const { return false; }
 
     //=========================================================================
+    // Connection Capability (for graph validation)
+    //=========================================================================
+
+    /**
+     * Check if this node can accept input from another node.
+     * Sources (oscillators) return false - they generate signal, not process it.
+     * Processors (filters, mixers) return true.
+     */
+    virtual bool canAcceptInput() const { return true; }
+
+    /**
+     * Check if this node can produce output to another node.
+     * Most nodes return true. An endpoint (like an audio output) might return false.
+     */
+    virtual bool canProduceOutput() const { return true; }
+
+    /**
+     * Get a user-friendly message explaining why input cannot be accepted.
+     * Used for error feedback when invalid connections are attempted.
+     */
+    virtual std::string getInputRestrictionMessage() const {
+        return canAcceptInput() ? "" : "This node cannot accept input connections.";
+    }
+
+    //=========================================================================
     // Probe Support (for flexible probe system)
     //=========================================================================
 
