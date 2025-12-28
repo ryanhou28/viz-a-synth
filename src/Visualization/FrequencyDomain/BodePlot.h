@@ -5,6 +5,7 @@
 #include "../../Core/Types.h"
 #include "../../Core/FrequencyValue.h"
 #include "../../DSP/Filters/StateVariableFilterWrapper.h"
+#include "../../DSP/SignalGraph.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 #include <optional>
@@ -44,11 +45,40 @@ public:
      * Constructor with filter wrapper for frequency response analysis.
      *
      * @param probeManager Reference to the probe manager for sample rate
-     * @param filterWrapper Reference to the filter to analyze
+     * @param filterWrapper Reference to the default filter to analyze
      */
     BodePlot(ProbeManager& probeManager, StateVariableFilterWrapper& filterWrapper);
 
     ~BodePlot() override = default;
+
+    //=========================================================================
+    // Per-Visualization Node Targeting
+    //=========================================================================
+
+    /**
+     * Override to indicate this visualization supports filter node targeting.
+     */
+    bool supportsNodeTargeting() const override { return true; }
+
+    /**
+     * Get the type of node this visualization targets.
+     */
+    std::string getTargetNodeType() const override { return "filter"; }
+
+    /**
+     * Set the signal graph for dynamic filter selection.
+     */
+    void setSignalGraph(SignalGraph* graph) override;
+
+    /**
+     * Set the target filter node by ID.
+     */
+    void setTargetNodeId(const std::string& nodeId) override;
+
+    /**
+     * Get available filter nodes for the dropdown.
+     */
+    std::vector<std::pair<std::string, std::string>> getAvailableNodes() const override;
 
     //=========================================================================
     // VisualizationPanel Interface
@@ -208,6 +238,16 @@ private:
     void drawDFTOverlay(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     /**
+     * Draw the filter selector dropdown.
+     */
+    void drawFilterSelector(juce::Graphics& g, juce::Rectangle<float> bounds);
+
+    /**
+     * Update internal state when target filter changes.
+     */
+    void updateTargetFilter();
+
+    /**
      * Compute frequency response from DFT of impulse response h[n].
      * This demonstrates that H(e^jω) = Σ h[n] * e^(-jωn)
      */
@@ -299,6 +339,15 @@ private:
     juce::Rectangle<float> phaseButtonBounds;
     juce::Rectangle<float> combinedButtonBounds;
     juce::Rectangle<float> dftToggleButtonBounds;
+
+    // Filter selector
+    juce::Rectangle<float> filterSelectorBounds;
+    bool filterSelectorOpen = false;
+    std::vector<std::pair<std::string, std::string>> cachedFilterNodes;  // (id, displayName)
+
+    // Pointer to dynamically targeted filter (if using graph)
+    // Falls back to filterWrapper if null
+    const SignalNode* targetFilterNode = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BodePlot)
 };

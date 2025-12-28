@@ -3,7 +3,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "ProbeBuffer.h"
 #include "../DSP/Oscillators/PolyBLEPOscillator.h"
+#include "../DSP/SignalGraph.h"
 #include <vector>
+#include <functional>
 
 namespace vizasynth {
 
@@ -24,6 +26,18 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
+
+    // Per-Visualization Node Targeting
+    void setSignalGraph(SignalGraph* graph);
+    SignalGraph* getSignalGraph() const { return signalGraph; }
+    void setTargetNodeId(const std::string& nodeId);
+    std::string getTargetNodeId() const { return targetNodeId; }
+    std::vector<std::pair<std::string, std::string>> getAvailableNodes() const;
+    bool supportsNodeTargeting() const { return true; }
+    std::string getTargetNodeType() const { return "oscillator"; }
+
+    using NodeSelectionCallback = std::function<void(const std::string&, const std::string&)>;
+    void setNodeSelectionCallback(NodeSelectionCallback callback) { nodeSelectionCallback = std::move(callback); }
 
     // Freeze functionality
     void setFrozen(bool frozen);
@@ -71,6 +85,18 @@ private:
     // Voice mode toggle button bounds (for hit testing)
     juce::Rectangle<float> mixButtonBounds;
     juce::Rectangle<float> voiceButtonBounds;
+
+    // Oscillator selector
+    SignalGraph* signalGraph = nullptr;
+    std::string targetNodeId;
+    NodeSelectionCallback nodeSelectionCallback;
+    juce::Rectangle<float> oscSelectorBounds;
+    bool oscSelectorOpen = false;
+    std::vector<std::pair<std::string, std::string>> cachedOscillatorNodes;
+    const SignalNode* targetOscillatorNode = nullptr;
+
+    void drawOscillatorSelector(juce::Graphics& g, juce::Rectangle<float> bounds);
+    void updateTargetOscillator();
 
     // Constants
     static constexpr int RefreshRateHz = 60;

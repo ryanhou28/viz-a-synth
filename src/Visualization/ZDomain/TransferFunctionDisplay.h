@@ -5,6 +5,7 @@
 #include "../../Core/Types.h"
 #include "../../Core/FrequencyValue.h"
 #include "../../DSP/Filters/StateVariableFilterWrapper.h"
+#include "../../DSP/SignalGraph.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 #include <optional>
@@ -39,11 +40,21 @@ public:
      * Constructor with filter wrapper for coefficient access.
      *
      * @param probeManager Reference to the probe manager for sample rate
-     * @param filterWrapper Reference to the filter to analyze
+     * @param filterWrapper Reference to the default filter to analyze
      */
     TransferFunctionDisplay(ProbeManager& probeManager, StateVariableFilterWrapper& filterWrapper);
 
     ~TransferFunctionDisplay() override = default;
+
+    //=========================================================================
+    // Per-Visualization Node Targeting
+    //=========================================================================
+
+    bool supportsNodeTargeting() const override { return true; }
+    std::string getTargetNodeType() const override { return "filter"; }
+    void setSignalGraph(SignalGraph* graph) override;
+    void setTargetNodeId(const std::string& nodeId) override;
+    std::vector<std::pair<std::string, std::string>> getAvailableNodes() const override;
 
     //=========================================================================
     // VisualizationPanel Interface
@@ -206,6 +217,16 @@ private:
     static constexpr float HeaderHeight = 30.0f;
     static constexpr float SectionSpacing = 15.0f;
     static constexpr float PanelPadding = 12.0f;
+
+    // Filter selector
+    juce::Rectangle<float> filterSelectorBounds;
+    bool filterSelectorOpen = false;
+    std::vector<std::pair<std::string, std::string>> cachedFilterNodes;
+    const SignalNode* targetFilterNode = nullptr;
+
+    void drawFilterSelector(juce::Graphics& g, juce::Rectangle<float> bounds);
+    void updateTargetFilter();
+    void mouseDown(const juce::MouseEvent& event) override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransferFunctionDisplay)
 };

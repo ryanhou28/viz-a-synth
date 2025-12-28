@@ -24,6 +24,57 @@ BodePlot::BodePlot(ProbeManager& pm, StateVariableFilterWrapper& fw)
 }
 
 //=============================================================================
+// Per-Visualization Node Targeting
+//=============================================================================
+
+void BodePlot::setSignalGraph(SignalGraph* graph) {
+    VisualizationPanel::setSignalGraph(graph);
+
+    // Update cached filter nodes list
+    cachedFilterNodes.clear();
+    if (graph) {
+        graph->forEachNode([this](const std::string& nodeId, const SignalNode* node) {
+            // Check if it's a filter (supports analysis and is LTI)
+            if (node && node->supportsAnalysis() && node->isLTI()) {
+                cachedFilterNodes.emplace_back(nodeId, node->getName());
+            }
+        });
+    }
+
+    // If no target set yet and we have filters, select the first one
+    if (targetNodeId.empty() && !cachedFilterNodes.empty()) {
+        setTargetNodeId(cachedFilterNodes[0].first);
+    }
+}
+
+void BodePlot::setTargetNodeId(const std::string& nodeId) {
+    if (targetNodeId != nodeId) {
+        VisualizationPanel::setTargetNodeId(nodeId);
+        updateTargetFilter();
+    }
+}
+
+std::vector<std::pair<std::string, std::string>> BodePlot::getAvailableNodes() const {
+    return cachedFilterNodes;
+}
+
+void BodePlot::updateTargetFilter() {
+    targetFilterNode = nullptr;
+
+    if (signalGraph && !targetNodeId.empty()) {
+        auto* node = signalGraph->getNode(targetNodeId);
+        if (node && node->supportsAnalysis() && node->isLTI()) {
+            targetFilterNode = node;
+        }
+    }
+
+    // Force recalculation of frequency response
+    if (!frozen) {
+        repaint();
+    }
+}
+
+//=============================================================================
 // VisualizationPanel Interface
 //=============================================================================
 
@@ -114,6 +165,11 @@ void BodePlot::renderOverlay(juce::Graphics& g) {
 
     // Draw header
     drawHeader(g, juce::Rectangle<float>(bounds.getX(), 0, bounds.getWidth(), marginTop));
+
+    // Draw filter selector if multiple filters available
+    if (cachedFilterNodes.size() > 1) {
+        drawFilterSelector(g, bounds);
+    }
 
     // Draw rolloff annotation
     if (showRolloffAnnotation && displayMode != DisplayMode::PhaseOnly) {
@@ -767,6 +823,41 @@ void BodePlot::resized() {
 }
 
 void BodePlot::mouseDown(const juce::MouseEvent& event) {
+    // Check filter selector (if multiple filters)
+    if (cachedFilterNodes.size() > 1) {
+        if (filterSelectorBounds.contains(event.position)) {
+            filterSelectorOpen = !filterSelectorOpen;
+            repaint();
+            return;
+        }
+
+        // If dropdown is open, check for item clicks
+        if (filterSelectorOpen) {
+            float itemHeight = 20.0f;
+            float dropdownY = filterSelectorBounds.getBottom() + 2.0f + 2.0f;
+
+            for (size_t i = 0; i < cachedFilterNodes.size(); ++i) {
+                juce::Rectangle<float> itemBounds(
+                    filterSelectorBounds.getX() + 4.0f,
+                    dropdownY + i * itemHeight,
+                    filterSelectorBounds.getWidth() - 8.0f,
+                    itemHeight
+                );
+
+                if (itemBounds.contains(event.position)) {
+                    setTargetNodeId(cachedFilterNodes[i].first);
+                    filterSelectorOpen = false;
+                    repaint();
+                    return;
+                }
+            }
+
+            // Click outside dropdown closes it
+            filterSelectorOpen = false;
+            repaint();
+        }
+    }
+
     // Check display mode buttons
     if (combinedButtonBounds.contains(event.position)) {
         setDisplayMode(DisplayMode::Combined);
@@ -907,6 +998,103 @@ void BodePlot::drawDFTOverlay(juce::Graphics& g, juce::Rectangle<float> bounds) 
 
         g.setColour(dftColour);
         g.strokePath(dashedPath, juce::PathStrokeType(2.0f));
+    }
+}
+
+//=============================================================================
+// Filter Selector
+//=============================================================================
+
+void BodePlot::drawFilterSelector(juce::Graphics& g, juce::Rectangle<float> bounds) {
+    // Position in upper-left corner of the visualization area
+    float selectorWidth = 120.0f;
+    float selectorHeight = 22.0f;
+    float padding = 8.0f;
+
+    filterSelectorBounds = juce::Rectangle<float>(
+        bounds.getX() + padding,
+        bounds.getY() + padding,
+        selectorWidth,
+        selectorHeight
+    );
+
+    // Find current filter name
+    std::string currentFilterName = "Filter";
+    for (const auto& [id, name] : cachedFilterNodes) {
+        if (id == targetNodeId) {
+            currentFilterName = name;
+            break;
+        }
+    }
+
+    // Draw selector background
+    g.setColour(juce::Colour(0xff2a2a3a));
+    g.fillRoundedRectangle(filterSelectorBounds, 4.0f);
+
+    // Draw border
+    g.setColour(juce::Colour(0xff4a4a6a));
+    g.drawRoundedRectangle(filterSelectorBounds, 4.0f, 1.0f);
+
+    // Draw label
+    g.setColour(getTextColour());
+    g.setFont(10.0f);
+    auto textBounds = filterSelectorBounds.reduced(8.0f, 2.0f);
+    g.drawText("Analyzing: " + currentFilterName, textBounds,
+               juce::Justification::centredLeft, true);
+
+    // Draw dropdown arrow
+    float arrowSize = 6.0f;
+    float arrowX = filterSelectorBounds.getRight() - arrowSize - 8.0f;
+    float arrowY = filterSelectorBounds.getCentreY();
+
+    juce::Path arrow;
+    arrow.startNewSubPath(arrowX, arrowY - arrowSize * 0.4f);
+    arrow.lineTo(arrowX + arrowSize * 0.5f, arrowY + arrowSize * 0.4f);
+    arrow.lineTo(arrowX + arrowSize, arrowY - arrowSize * 0.4f);
+
+    g.setColour(getDimTextColour());
+    g.strokePath(arrow, juce::PathStrokeType(1.5f));
+
+    // If selector is open, draw the dropdown list
+    if (filterSelectorOpen) {
+        float itemHeight = 20.0f;
+        float dropdownHeight = cachedFilterNodes.size() * itemHeight + 4.0f;
+
+        juce::Rectangle<float> dropdownBounds(
+            filterSelectorBounds.getX(),
+            filterSelectorBounds.getBottom() + 2.0f,
+            filterSelectorBounds.getWidth(),
+            dropdownHeight
+        );
+
+        // Draw dropdown background
+        g.setColour(juce::Colour(0xff1a1a2a));
+        g.fillRoundedRectangle(dropdownBounds, 4.0f);
+        g.setColour(juce::Colour(0xff4a4a6a));
+        g.drawRoundedRectangle(dropdownBounds, 4.0f, 1.0f);
+
+        // Draw items
+        float itemY = dropdownBounds.getY() + 2.0f;
+        for (const auto& [id, name] : cachedFilterNodes) {
+            juce::Rectangle<float> itemBounds(
+                dropdownBounds.getX() + 4.0f,
+                itemY,
+                dropdownBounds.getWidth() - 8.0f,
+                itemHeight
+            );
+
+            // Highlight current selection
+            if (id == targetNodeId) {
+                g.setColour(juce::Colour(0xff3a3a5a));
+                g.fillRoundedRectangle(itemBounds, 2.0f);
+            }
+
+            g.setColour(id == targetNodeId ? getTextColour() : getDimTextColour());
+            g.setFont(10.0f);
+            g.drawText(name, itemBounds.reduced(4.0f, 0), juce::Justification::centredLeft);
+
+            itemY += itemHeight;
+        }
     }
 }
 

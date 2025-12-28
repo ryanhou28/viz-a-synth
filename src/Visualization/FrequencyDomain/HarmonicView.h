@@ -5,6 +5,7 @@
 #include "../../Core/FrequencyValue.h"
 #include "../../Core/Types.h"
 #include "../../DSP/Oscillators/OscillatorSource.h"
+#include "../../DSP/SignalGraph.h"
 #include <juce_dsp/juce_dsp.h>
 #include <vector>
 #include <array>
@@ -40,6 +41,16 @@ public:
     HarmonicView(ProbeManager& probeManager, PolyBLEPOscillator& oscillator);
 
     ~HarmonicView() override = default;
+
+    //=========================================================================
+    // Per-Visualization Node Targeting
+    //=========================================================================
+
+    bool supportsNodeTargeting() const override { return true; }
+    std::string getTargetNodeType() const override { return "oscillator"; }
+    void setSignalGraph(SignalGraph* graph) override;
+    void setTargetNodeId(const std::string& nodeId) override;
+    std::vector<std::pair<std::string, std::string>> getAvailableNodes() const override;
 
     //=========================================================================
     // VisualizationPanel Interface
@@ -227,6 +238,15 @@ private:
     // Display range
     static constexpr float MinDB = -60.0f;
     static constexpr float MaxDB = 0.0f;
+
+    // Oscillator selector
+    juce::Rectangle<float> oscSelectorBounds;
+    bool oscSelectorOpen = false;
+    std::vector<std::pair<std::string, std::string>> cachedOscillatorNodes;
+    const SignalNode* targetOscillatorNode = nullptr;
+
+    void drawOscillatorSelector(juce::Graphics& g, juce::Rectangle<float> bounds);
+    void updateTargetOscillator();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HarmonicView)
 };

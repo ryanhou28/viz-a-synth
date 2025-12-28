@@ -13,6 +13,13 @@ class ProbeBuffer;
 class ProbeManager;
 class FilterNode;
 class OscillatorSource;
+class SignalGraph;
+
+/**
+ * Callback type for when a visualization's node selection changes.
+ * The callback receives the visualization type ("filter" or "oscillator") and the selected node ID.
+ */
+using NodeSelectionCallback = std::function<void(const std::string& vizType, const std::string& nodeId)>;
 
 /**
  * VisualizationPanel - Base class for all visualization components
@@ -102,6 +109,59 @@ public:
      * Get the current probe point.
      */
     ProbePoint getProbePoint() const { return currentProbePoint; }
+
+    //=========================================================================
+    // Per-Visualization Node Targeting
+    //=========================================================================
+
+    /**
+     * Set the signal graph for node selection.
+     * Visualizations that support per-visualization node selection will use this
+     * to populate their node selector dropdowns.
+     */
+    virtual void setSignalGraph(SignalGraph* graph);
+
+    /**
+     * Get the current signal graph.
+     */
+    SignalGraph* getSignalGraph() const { return signalGraph; }
+
+    /**
+     * Set the target node ID for this visualization.
+     * For filter visualizations, this selects which filter to analyze.
+     * For oscillator visualizations, this selects which oscillator to display.
+     * @param nodeId The node ID to target (e.g., "filter1", "osc2")
+     */
+    virtual void setTargetNodeId(const std::string& nodeId);
+
+    /**
+     * Get the currently targeted node ID.
+     */
+    std::string getTargetNodeId() const { return targetNodeId; }
+
+    /**
+     * Set a callback for when node selection changes.
+     * This allows PluginEditor to sync node selection across visualizations.
+     */
+    void setNodeSelectionCallback(NodeSelectionCallback callback) { nodeSelectionCallback = std::move(callback); }
+
+    /**
+     * Get the available node IDs for this visualization type.
+     * Filter visualizations return filter node IDs, oscillator visualizations return oscillator node IDs.
+     * Base class returns empty vector.
+     */
+    virtual std::vector<std::pair<std::string, std::string>> getAvailableNodes() const;
+
+    /**
+     * Check if this visualization supports per-visualization node targeting.
+     * Override in subclasses that support node selection.
+     */
+    virtual bool supportsNodeTargeting() const { return false; }
+
+    /**
+     * Get the node type this visualization targets ("filter", "oscillator", or empty).
+     */
+    virtual std::string getTargetNodeType() const { return ""; }
 
     //=========================================================================
     // Freeze/Clear Functionality
@@ -248,10 +308,15 @@ protected:
 
     ProbeBuffer* probeBuffer = nullptr;
     const SignalNode* signalNode = nullptr;
+    SignalGraph* signalGraph = nullptr;
     float sampleRate = 44100.0f;
     bool frozen = false;
     bool showEquations = false;
     ProbePoint currentProbePoint = ProbePoint::Output;
+
+    // Per-visualization node targeting
+    std::string targetNodeId;
+    NodeSelectionCallback nodeSelectionCallback;
 
     // Panel margins
     float marginTop = 25.0f;

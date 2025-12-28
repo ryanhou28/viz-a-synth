@@ -37,6 +37,32 @@ void VisualizationPanel::setProbePoint(ProbePoint probe) {
 }
 
 //=============================================================================
+// Per-Visualization Node Targeting
+//=============================================================================
+
+void VisualizationPanel::setSignalGraph(SignalGraph* graph) {
+    signalGraph = graph;
+    // Subclasses should override to update their node selector dropdown
+    repaint();
+}
+
+void VisualizationPanel::setTargetNodeId(const std::string& nodeId) {
+    if (targetNodeId != nodeId) {
+        targetNodeId = nodeId;
+        // Notify callback if set
+        if (nodeSelectionCallback) {
+            nodeSelectionCallback(getTargetNodeType(), targetNodeId);
+        }
+        repaint();
+    }
+}
+
+std::vector<std::pair<std::string, std::string>> VisualizationPanel::getAvailableNodes() const {
+    // Base implementation returns empty - subclasses should override
+    return {};
+}
+
+//=============================================================================
 // Freeze/Clear
 //=============================================================================
 

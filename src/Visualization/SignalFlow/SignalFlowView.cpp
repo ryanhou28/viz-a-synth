@@ -122,6 +122,11 @@ void SignalFlowView::setProbeSelectionCallback(ProbeSelectionCallback callback)
     selectionCallback = std::move(callback);
 }
 
+void SignalFlowView::setNodeSelectionCallback(NodeSelectionCallback callback)
+{
+    nodeSelectionCallback = std::move(callback);
+}
+
 void SignalFlowView::updateProbeSelection()
 {
     repaint();
@@ -160,7 +165,15 @@ void SignalFlowView::paint(juce::Graphics& g)
     // Draw connections/arrows first (so blocks appear on top)
     g.setColour(juce::Colour(0xff606080));
 
-    if (useGraphLayout && !connections.empty()) {
+    // Check if we should use linear fallback (same logic as in resized())
+    auto bounds = getLocalBounds().toFloat();
+    bounds.removeFromTop(16.0f);
+    bounds = bounds.reduced(blockPadding, 4.0f);
+    float availableHeight = bounds.getHeight();
+    constexpr float minHeightForGraphLayout = 200.0f;
+    bool useLinearFallback = availableHeight < minHeightForGraphLayout;
+
+    if (useGraphLayout && !useLinearFallback && !connections.empty()) {
         // Graph mode: draw Bezier curves for each connection
         for (const auto& conn : connections) {
             drawBezierConnection(g, conn);
@@ -386,7 +399,15 @@ void SignalFlowView::resized()
     bounds.removeFromTop(16.0f);
     bounds = bounds.reduced(blockPadding, 4.0f);
 
-    if (useGraphLayout) {
+    float availableHeight = bounds.getHeight();
+
+    // If height is constrained (less than minimum for graph layout), use linear layout
+    // Minimum height needed: enough for multiple nodes vertically (each node ~50px + 70px spacing)
+    // For a compact view like the signal flow header, we need much more height for vertical layout
+    constexpr float minHeightForGraphLayout = 200.0f;
+    bool useLinearFallback = availableHeight < minHeightForGraphLayout;
+
+    if (useGraphLayout && !useLinearFallback) {
         // Graph mode: hierarchical layout based on layers
         // Find max layer and max nodes per layer
         int maxLayer = 0;
@@ -401,7 +422,6 @@ void SignalFlowView::resized()
 
         // Calculate available space
         float availableWidth = bounds.getWidth();
-        float availableHeight = bounds.getHeight();
 
         // Determine block size and spacing
         float actualBlockWidth = std::min(blockWidth, availableWidth / (numLayers + 1));
@@ -427,20 +447,21 @@ void SignalFlowView::resized()
             block.bounds = juce::Rectangle<float>(x, y, actualBlockWidth, actualBlockHeight);
         }
     } else {
-        // Linear mode: horizontal layout (original behavior)
+        // Linear mode: horizontal layout
+        // Used when graph layout is disabled OR when height is too constrained
         int numBlocks = static_cast<int>(blocks.size());
         if (numBlocks == 0) return;
 
         float totalArrowSpace = arrowGap * (numBlocks - 1);
         float availableWidth = bounds.getWidth() - totalArrowSpace;
-        float blockWidth = availableWidth / numBlocks;
-        float blockHeight = bounds.getHeight();
+        float actualBlockWidth = availableWidth / numBlocks;
+        float actualBlockHeight = std::min(blockHeight, availableHeight);
 
-        // Position each block
+        // Position each block horizontally
         float x = bounds.getX();
         for (auto& block : blocks) {
-            block.bounds = juce::Rectangle<float>(x, bounds.getY(), blockWidth, blockHeight);
-            x += blockWidth + arrowGap;
+            block.bounds = juce::Rectangle<float>(x, bounds.getY(), actualBlockWidth, actualBlockHeight);
+            x += actualBlockWidth + arrowGap;
         }
     }
 }
@@ -490,6 +511,27 @@ void SignalFlowView::mouseDown(const juce::MouseEvent& event)
             // Notify callback
             if (selectionCallback) {
                 selectionCallback(newProbe);
+            }
+        }
+
+        // Notify node selection callback (for syncing with control panels)
+        if (nodeSelectionCallback && !clickedBlock.nodeId.empty()) {
+            // Determine node type from the block
+            std::string nodeType;
+            if (clickedBlock.name.find("OSC") != std::string::npos ||
+                clickedBlock.name.find("Osc") != std::string::npos) {
+                nodeType = "oscillator";
+            } else if (clickedBlock.name.find("FILTER") != std::string::npos ||
+                       clickedBlock.name.find("Filter") != std::string::npos) {
+                nodeType = "filter";
+            } else if (clickedBlock.processingType == "Signal Generator") {
+                nodeType = "oscillator";
+            } else if (clickedBlock.processingType == "LTI System") {
+                nodeType = "filter";
+            }
+
+            if (!nodeType.empty()) {
+                nodeSelectionCallback(clickedBlock.nodeId, nodeType);
             }
         }
 
@@ -633,8 +675,12 @@ void SignalFlowView::updateFromSignalGraph()
 
 void SignalFlowView::computeHierarchicalLayout()
 {
-    if (blocks.empty() || connections.empty()) {
-        // Simple linear layout if no connections
+    if (blocks.empty()) {
+        return;
+    }
+
+    if (connections.empty()) {
+        // No connections - assign sequential layers
         for (size_t i = 0; i < blocks.size(); ++i) {
             blocks[i].layer = static_cast<int>(i);
             blocks[i].positionInLayer = 0;
@@ -644,6 +690,13 @@ void SignalFlowView::computeHierarchicalLayout()
 
     // Step 1: Assign layers (longest path from sources)
     assignLayersToBlocks();
+
+    // Step 2: Sort blocks by layer for correct linear display order
+    // This ensures oscillator (layer 0) comes before filter (layer 1), etc.
+    std::stable_sort(blocks.begin(), blocks.end(),
+                     [](const SignalBlock& a, const SignalBlock& b) {
+                         return a.layer < b.layer;
+                     });
 
     // Step 2: Minimize crossings (optional, can be expensive)
     // minimizeCrossings();

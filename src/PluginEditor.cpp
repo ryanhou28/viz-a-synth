@@ -33,8 +33,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
                           }
                           throw std::runtime_error("No voices available to provide an oscillator.");
                       }()),
-      envelopeVisualizer(p.getAPVTS()),
-      signalFlowView(p.getProbeManager())
+      envelopeVisualizer(p.getAPVTS())
 {
     // Set editor size from configuration
     auto& config = vizasynth::ConfigurationManager::getInstance();
@@ -53,16 +52,6 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     addAndMakeVisible(impulseResponse);
     addAndMakeVisible(singleCycleView);
     addAndMakeVisible(envelopeVisualizer);
-    addAndMakeVisible(signalFlowView);
-
-    // Setup signal flow view callback to sync probe buttons
-    signalFlowView.setProbeSelectionCallback([this](vizasynth::ProbePoint) {
-        updateProbeButtons();
-    });
-
-    // Connect SignalFlowView to ProbeRegistry for dynamic probe visualization
-    signalFlowView.setProbeRegistry(&audioProcessor.getProbeRegistry());
-    signalFlowView.updateFromProbeRegistry();
 
     // Register as ProbeRegistry listener for dynamic probe button updates
     audioProcessor.getProbeRegistry().addListener(this);
@@ -356,6 +345,17 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     chainEditor.setVisible(false);
     addAndMakeVisible(chainEditor);
 
+    // Wire up SignalGraph to all visualizations that support per-visualization node targeting
+    // This enables filter/oscillator selection dropdowns when multiple nodes exist
+    if (auto* voiceGraph = audioProcessor.getVoiceGraph()) {
+        bodePlot.setSignalGraph(voiceGraph);
+        poleZeroPlot.setSignalGraph(voiceGraph);
+        impulseResponse.setSignalGraph(voiceGraph);
+        transferFunctionDisplay.setSignalGraph(voiceGraph);
+        harmonicView.setSignalGraph(voiceGraph);
+        singleCycleView.setSignalGraph(voiceGraph);
+    }
+
     // Setup virtual keyboard
     virtualKeyboard.setNoteCallback([this](const juce::MidiMessage& msg) {
         audioProcessor.addMidiMessage(msg);
@@ -450,9 +450,7 @@ void VizASynthAudioProcessorEditor::paint(juce::Graphics& g)
     int envPanelW = config.getLayoutInt("components.envelopePanel.width", 320);
     int envPanelH = config.getLayoutInt("components.envelopePanel.height", 230);
     int panelSpacing = config.getLayoutInt("components.panels.spacing", 22);
-    // Account for signal flow view at the top
-    int signalFlowHeight = config.getLayoutInt("layout.signalFlow.height", 60);
-    int oscY = 5 + signalFlowHeight + 10 + 5;  // margin + signalFlow + gap + panel margin
+    int oscY = 10;  // Top margin for oscillator panel
     int filterY = oscY + oscPanelH + panelSpacing;
     int envY = filterY + filterPanelH + panelSpacing;
     int leftPanelTitleYOffset = config.getLayoutInt("components.panels.titleYOffset", 6);
@@ -628,17 +626,8 @@ void VizASynthAudioProcessorEditor::resized()
     // --- Control panel area (left side) ---
     int panelX = leftPanelArea.getX();
 
-    // Signal flow view at the top
-    int signalFlowHeight = config.getLayoutInt("layout.signalFlow.height", 60);
-    int signalFlowY = leftPanelArea.getY() + 5;
-    int signalFlowWidth = layout.oscPanelW;  // Match oscillator panel width
-    signalFlowView.setBounds(panelX + config.getLayoutInt("components.oscillatorPanel.x", 30) - panelX,
-                             signalFlowY,
-                             signalFlowWidth,
-                             signalFlowHeight);
-
-    // Adjust oscY to account for signal flow view
-    int oscY = signalFlowY + signalFlowHeight + 10;
+    // Oscillator panel Y position (no signal flow view anymore)
+    int oscY = leftPanelArea.getY() + 5;
     int filterY = oscY + layout.oscPanelH + layout.panelSpacing;
     int envY = filterY + layout.filterPanelH + layout.panelSpacing;
 
@@ -1123,6 +1112,16 @@ void VizASynthAudioProcessorEditor::onNodeAdded(const std::string& nodeId, const
     // Update node selectors when a new node is added
     juce::MessageManager::callAsync([this]() {
         updateNodeSelectors();
+
+        // Update visualization node lists
+        if (auto* graph = audioProcessor.getVoiceGraph()) {
+            bodePlot.setSignalGraph(graph);
+            poleZeroPlot.setSignalGraph(graph);
+            impulseResponse.setSignalGraph(graph);
+            transferFunctionDisplay.setSignalGraph(graph);
+            harmonicView.setSignalGraph(graph);
+            singleCycleView.setSignalGraph(graph);
+        }
     });
 }
 
@@ -1138,24 +1137,44 @@ void VizASynthAudioProcessorEditor::onNodeRemoved(const std::string& nodeId)
             selectedFilterId = "filter1";  // Reset to default
         }
         updateNodeSelectors();
+
+        // Update visualization node lists
+        if (auto* graph = audioProcessor.getVoiceGraph()) {
+            bodePlot.setSignalGraph(graph);
+            poleZeroPlot.setSignalGraph(graph);
+            impulseResponse.setSignalGraph(graph);
+            transferFunctionDisplay.setSignalGraph(graph);
+            harmonicView.setSignalGraph(graph);
+            singleCycleView.setSignalGraph(graph);
+        }
     });
 }
 
 void VizASynthAudioProcessorEditor::onConnectionAdded(const std::string& /*sourceId*/, const std::string& /*destId*/)
 {
-    // Connections don't affect node selectors, but could update SignalFlowView
+    // Connection changes don't require UI updates for visualizations
 }
 
 void VizASynthAudioProcessorEditor::onConnectionRemoved(const std::string& /*sourceId*/, const std::string& /*destId*/)
 {
-    // Connections don't affect node selectors, but could update SignalFlowView
+    // Connection changes don't require UI updates for visualizations
 }
 
 void VizASynthAudioProcessorEditor::onGraphStructureChanged()
 {
-    // Full graph reset - rebuild selectors
+    // Full graph reset - rebuild selectors and update visualizations
     juce::MessageManager::callAsync([this]() {
         updateNodeSelectors();
+
+        // Update all visualizations with the new graph
+        if (auto* graph = audioProcessor.getVoiceGraph()) {
+            bodePlot.setSignalGraph(graph);
+            poleZeroPlot.setSignalGraph(graph);
+            impulseResponse.setSignalGraph(graph);
+            transferFunctionDisplay.setSignalGraph(graph);
+            harmonicView.setSignalGraph(graph);
+            singleCycleView.setSignalGraph(graph);
+        }
     });
 }
 

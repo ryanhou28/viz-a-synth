@@ -21,6 +21,53 @@ HarmonicView::HarmonicView(ProbeManager& pm, PolyBLEPOscillator& osc)
 }
 
 //==============================================================================
+// Per-Visualization Node Targeting
+//==============================================================================
+
+void HarmonicView::setSignalGraph(SignalGraph* graph) {
+    VisualizationPanel::setSignalGraph(graph);
+
+    cachedOscillatorNodes.clear();
+    if (graph) {
+        graph->forEachNode([this](const std::string& nodeId, const SignalNode* node) {
+            if (node && !node->canAcceptInput()) {  // Oscillators don't accept input
+                cachedOscillatorNodes.emplace_back(nodeId, node->getName());
+            }
+        });
+    }
+
+    if (targetNodeId.empty() && !cachedOscillatorNodes.empty()) {
+        setTargetNodeId(cachedOscillatorNodes[0].first);
+    }
+}
+
+void HarmonicView::setTargetNodeId(const std::string& nodeId) {
+    if (targetNodeId != nodeId) {
+        VisualizationPanel::setTargetNodeId(nodeId);
+        updateTargetOscillator();
+    }
+}
+
+std::vector<std::pair<std::string, std::string>> HarmonicView::getAvailableNodes() const {
+    return cachedOscillatorNodes;
+}
+
+void HarmonicView::updateTargetOscillator() {
+    targetOscillatorNode = nullptr;
+
+    if (signalGraph && !targetNodeId.empty()) {
+        auto* node = signalGraph->getNode(targetNodeId);
+        if (node && !node->canAcceptInput()) {
+            targetOscillatorNode = node;
+        }
+    }
+
+    if (!frozen) {
+        repaint();
+    }
+}
+
+//==============================================================================
 void HarmonicView::setFrozen(bool freeze)
 {
     if (freeze && !frozen) {
@@ -282,6 +329,11 @@ void HarmonicView::renderOverlay(juce::Graphics& g)
 
     float displayFundamental = frozen ? frozenFundamental : smoothedFundamental;
 
+    // Draw oscillator selector if multiple oscillators available
+    if (cachedOscillatorNodes.size() > 1) {
+        drawOscillatorSelector(g, bounds);
+    }
+
     // Draw probe indicator
     g.setColour(probeColour);
     g.setFont(12.0f);
@@ -423,6 +475,40 @@ void HarmonicView::resized()
 void HarmonicView::mouseDown(const juce::MouseEvent& event)
 {
     auto pos = event.position;
+
+    // Check oscillator selector (if multiple oscillators)
+    if (cachedOscillatorNodes.size() > 1) {
+        if (oscSelectorBounds.contains(pos)) {
+            oscSelectorOpen = !oscSelectorOpen;
+            repaint();
+            return;
+        }
+
+        if (oscSelectorOpen) {
+            float itemHeight = 20.0f;
+            float dropdownY = oscSelectorBounds.getBottom() + 2.0f + 2.0f;
+
+            for (size_t i = 0; i < cachedOscillatorNodes.size(); ++i) {
+                juce::Rectangle<float> itemBounds(
+                    oscSelectorBounds.getX() + 4.0f,
+                    dropdownY + i * itemHeight,
+                    oscSelectorBounds.getWidth() - 8.0f,
+                    itemHeight
+                );
+
+                if (itemBounds.contains(pos)) {
+                    setTargetNodeId(cachedOscillatorNodes[i].first);
+                    oscSelectorOpen = false;
+                    repaint();
+                    return;
+                }
+            }
+
+            oscSelectorOpen = false;
+            repaint();
+            return;
+        }
+    }
 
     if (mixButtonBounds.contains(pos)) {
         probeManager.setVoiceMode(VoiceMode::Mix);
@@ -710,6 +796,93 @@ float HarmonicView::frequencyToCentsDeviation(float frequency)
 
     // Cents deviation from nearest note
     return (semitones - static_cast<float>(roundedSemitones)) * 100.0f;
+}
+
+//==============================================================================
+// Oscillator Selector
+//==============================================================================
+
+void HarmonicView::drawOscillatorSelector(juce::Graphics& g, juce::Rectangle<float> bounds) {
+    float selectorWidth = 120.0f;
+    float selectorHeight = 22.0f;
+    float padding = 8.0f;
+
+    oscSelectorBounds = juce::Rectangle<float>(
+        bounds.getX() + padding,
+        bounds.getY() + padding,
+        selectorWidth,
+        selectorHeight
+    );
+
+    std::string currentOscName = "Oscillator";
+    for (const auto& [id, name] : cachedOscillatorNodes) {
+        if (id == targetNodeId) {
+            currentOscName = name;
+            break;
+        }
+    }
+
+    g.setColour(juce::Colour(0xff2a2a3a));
+    g.fillRoundedRectangle(oscSelectorBounds, 4.0f);
+
+    g.setColour(juce::Colour(0xff4a4a6a));
+    g.drawRoundedRectangle(oscSelectorBounds, 4.0f, 1.0f);
+
+    g.setColour(getTextColour());
+    g.setFont(10.0f);
+    auto textBounds = oscSelectorBounds.reduced(8.0f, 2.0f);
+    g.drawText("Source: " + currentOscName, textBounds,
+               juce::Justification::centredLeft, true);
+
+    float arrowSize = 6.0f;
+    float arrowX = oscSelectorBounds.getRight() - arrowSize - 8.0f;
+    float arrowY = oscSelectorBounds.getCentreY();
+
+    juce::Path arrow;
+    arrow.startNewSubPath(arrowX, arrowY - arrowSize * 0.4f);
+    arrow.lineTo(arrowX + arrowSize * 0.5f, arrowY + arrowSize * 0.4f);
+    arrow.lineTo(arrowX + arrowSize, arrowY - arrowSize * 0.4f);
+
+    g.setColour(getDimTextColour());
+    g.strokePath(arrow, juce::PathStrokeType(1.5f));
+
+    if (oscSelectorOpen) {
+        float itemHeight = 20.0f;
+        float dropdownHeight = cachedOscillatorNodes.size() * itemHeight + 4.0f;
+
+        juce::Rectangle<float> dropdownBounds(
+            oscSelectorBounds.getX(),
+            oscSelectorBounds.getBottom() + 2.0f,
+            oscSelectorBounds.getWidth(),
+            dropdownHeight
+        );
+
+        g.setColour(juce::Colour(0xff1a1a2a));
+        g.fillRoundedRectangle(dropdownBounds, 4.0f);
+        g.setColour(juce::Colour(0xff4a4a6a));
+        g.drawRoundedRectangle(dropdownBounds, 4.0f, 1.0f);
+
+        float itemY = dropdownBounds.getY() + 2.0f;
+        for (const auto& [id, name] : cachedOscillatorNodes) {
+            juce::Rectangle<float> itemBounds(
+                dropdownBounds.getX() + 4.0f,
+                itemY,
+                dropdownBounds.getWidth() - 8.0f,
+                itemHeight
+            );
+
+            if (id == targetNodeId) {
+                g.setColour(juce::Colour(0xff3a3a5a));
+                g.fillRoundedRectangle(itemBounds, 2.0f);
+            }
+
+            g.setColour(id == targetNodeId ? getTextColour() : getDimTextColour());
+            g.setFont(10.0f);
+            g.drawText(name, itemBounds.reduced(4.0f, 0), juce::Justification::centredLeft);
+
+            itemY += itemHeight;
+        }
+    }
 }
 
 } // namespace vizasynth

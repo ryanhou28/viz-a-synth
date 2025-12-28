@@ -24,6 +24,53 @@ ImpulseResponse::ImpulseResponse(ProbeManager& pm, StateVariableFilterWrapper& f
 }
 
 //=============================================================================
+// Per-Visualization Node Targeting
+//=============================================================================
+
+void ImpulseResponse::setSignalGraph(SignalGraph* graph) {
+    VisualizationPanel::setSignalGraph(graph);
+
+    cachedFilterNodes.clear();
+    if (graph) {
+        graph->forEachNode([this](const std::string& nodeId, const SignalNode* node) {
+            if (node && node->supportsAnalysis() && node->isLTI()) {
+                cachedFilterNodes.emplace_back(nodeId, node->getName());
+            }
+        });
+    }
+
+    if (targetNodeId.empty() && !cachedFilterNodes.empty()) {
+        setTargetNodeId(cachedFilterNodes[0].first);
+    }
+}
+
+void ImpulseResponse::setTargetNodeId(const std::string& nodeId) {
+    if (targetNodeId != nodeId) {
+        VisualizationPanel::setTargetNodeId(nodeId);
+        updateTargetFilter();
+    }
+}
+
+std::vector<std::pair<std::string, std::string>> ImpulseResponse::getAvailableNodes() const {
+    return cachedFilterNodes;
+}
+
+void ImpulseResponse::updateTargetFilter() {
+    targetFilterNode = nullptr;
+
+    if (signalGraph && !targetNodeId.empty()) {
+        auto* node = signalGraph->getNode(targetNodeId);
+        if (node && node->supportsAnalysis() && node->isLTI()) {
+            targetFilterNode = node;
+        }
+    }
+
+    if (!frozen) {
+        repaint();
+    }
+}
+
+//=============================================================================
 // VisualizationPanel Interface
 //=============================================================================
 
@@ -98,6 +145,11 @@ void ImpulseResponse::renderOverlay(juce::Graphics& g) {
 
     // Draw header
     drawHeader(g, juce::Rectangle<float>(bounds.getX(), 0, bounds.getWidth(), marginTop));
+
+    // Draw filter selector if multiple filters available
+    if (cachedFilterNodes.size() > 1) {
+        drawFilterSelector(g, bounds);
+    }
 
     // Draw pole information
     if (showPoleInfo) {
@@ -543,6 +595,39 @@ void ImpulseResponse::resized() {
 }
 
 void ImpulseResponse::mouseDown(const juce::MouseEvent& event) {
+    // Check filter selector (if multiple filters)
+    if (cachedFilterNodes.size() > 1) {
+        if (filterSelectorBounds.contains(event.position)) {
+            filterSelectorOpen = !filterSelectorOpen;
+            repaint();
+            return;
+        }
+
+        if (filterSelectorOpen) {
+            float itemHeight = 20.0f;
+            float dropdownY = filterSelectorBounds.getBottom() + 2.0f + 2.0f;
+
+            for (size_t i = 0; i < cachedFilterNodes.size(); ++i) {
+                juce::Rectangle<float> itemBounds(
+                    filterSelectorBounds.getX() + 4.0f,
+                    dropdownY + i * itemHeight,
+                    filterSelectorBounds.getWidth() - 8.0f,
+                    itemHeight
+                );
+
+                if (itemBounds.contains(event.position)) {
+                    setTargetNodeId(cachedFilterNodes[i].first);
+                    filterSelectorOpen = false;
+                    repaint();
+                    return;
+                }
+            }
+
+            filterSelectorOpen = false;
+            repaint();
+        }
+    }
+
     // Check display mode buttons
     if (stemButtonBounds.contains(event.position)) {
         setDisplayMode(DisplayMode::StemPlot);
@@ -581,6 +666,93 @@ void ImpulseResponse::mouseExit(const juce::MouseEvent& /*event*/) {
         isHovering = false;
         hoverSampleIndex = -1;
         repaint();
+    }
+}
+
+//=============================================================================
+// Filter Selector
+//=============================================================================
+
+void ImpulseResponse::drawFilterSelector(juce::Graphics& g, juce::Rectangle<float> bounds) {
+    float selectorWidth = 120.0f;
+    float selectorHeight = 22.0f;
+    float padding = 8.0f;
+
+    filterSelectorBounds = juce::Rectangle<float>(
+        bounds.getX() + padding,
+        bounds.getY() + padding,
+        selectorWidth,
+        selectorHeight
+    );
+
+    std::string currentFilterName = "Filter";
+    for (const auto& [id, name] : cachedFilterNodes) {
+        if (id == targetNodeId) {
+            currentFilterName = name;
+            break;
+        }
+    }
+
+    g.setColour(juce::Colour(0xff2a2a3a));
+    g.fillRoundedRectangle(filterSelectorBounds, 4.0f);
+
+    g.setColour(juce::Colour(0xff4a4a6a));
+    g.drawRoundedRectangle(filterSelectorBounds, 4.0f, 1.0f);
+
+    g.setColour(getTextColour());
+    g.setFont(10.0f);
+    auto textBounds = filterSelectorBounds.reduced(8.0f, 2.0f);
+    g.drawText("Analyzing: " + currentFilterName, textBounds,
+               juce::Justification::centredLeft, true);
+
+    float arrowSize = 6.0f;
+    float arrowX = filterSelectorBounds.getRight() - arrowSize - 8.0f;
+    float arrowY = filterSelectorBounds.getCentreY();
+
+    juce::Path arrow;
+    arrow.startNewSubPath(arrowX, arrowY - arrowSize * 0.4f);
+    arrow.lineTo(arrowX + arrowSize * 0.5f, arrowY + arrowSize * 0.4f);
+    arrow.lineTo(arrowX + arrowSize, arrowY - arrowSize * 0.4f);
+
+    g.setColour(getDimTextColour());
+    g.strokePath(arrow, juce::PathStrokeType(1.5f));
+
+    if (filterSelectorOpen) {
+        float itemHeight = 20.0f;
+        float dropdownHeight = cachedFilterNodes.size() * itemHeight + 4.0f;
+
+        juce::Rectangle<float> dropdownBounds(
+            filterSelectorBounds.getX(),
+            filterSelectorBounds.getBottom() + 2.0f,
+            filterSelectorBounds.getWidth(),
+            dropdownHeight
+        );
+
+        g.setColour(juce::Colour(0xff1a1a2a));
+        g.fillRoundedRectangle(dropdownBounds, 4.0f);
+        g.setColour(juce::Colour(0xff4a4a6a));
+        g.drawRoundedRectangle(dropdownBounds, 4.0f, 1.0f);
+
+        float itemY = dropdownBounds.getY() + 2.0f;
+        for (const auto& [id, name] : cachedFilterNodes) {
+            juce::Rectangle<float> itemBounds(
+                dropdownBounds.getX() + 4.0f,
+                itemY,
+                dropdownBounds.getWidth() - 8.0f,
+                itemHeight
+            );
+
+            if (id == targetNodeId) {
+                g.setColour(juce::Colour(0xff3a3a5a));
+                g.fillRoundedRectangle(itemBounds, 2.0f);
+            }
+
+            g.setColour(id == targetNodeId ? getTextColour() : getDimTextColour());
+            g.setFont(10.0f);
+            g.drawText(name, itemBounds.reduced(4.0f, 0), juce::Justification::centredLeft);
+
+            itemY += itemHeight;
+        }
     }
 }
 

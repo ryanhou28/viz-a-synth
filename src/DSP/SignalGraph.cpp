@@ -336,16 +336,21 @@ void SignalGraph::registerAllProbesWithRegistry()
         return;
     }
 
+    // Use topological order to ensure probes are registered in signal flow order
+    // (oscillator before filter, etc.) rather than alphabetical map order
+    auto processingOrder = computeProcessingOrder();
+
     int orderIndex = 0;
-    for (const auto& [id, graphNode] : nodes) {
-        if (graphNode.node) {
+    for (const auto& id : processingOrder) {
+        const auto* graphNode = getGraphNode(id);
+        if (graphNode && graphNode->node) {
             std::string probeId = id + ".output";
-            std::string displayName = graphNode.node->getName();
-            std::string processingType = graphNode.node->getProcessingType();
-            juce::Colour color = graphNode.node->getProbeColor();
+            std::string displayName = graphNode->node->getName();
+            std::string processingType = graphNode->node->getProcessingType();
+            juce::Colour color = graphNode->node->getProbeColor();
 
             probeRegistry->registerProbe(probeId, displayName, processingType,
-                                         graphNode.probeBuffer.get(),
+                                         graphNode->probeBuffer.get(),
                                          color, orderIndex);
             orderIndex += 10;
         }

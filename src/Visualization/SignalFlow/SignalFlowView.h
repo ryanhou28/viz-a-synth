@@ -40,6 +40,12 @@ public:
      */
     using ProbeSelectionCallback = std::function<void(ProbePoint)>;
 
+    /**
+     * Callback type for node selection changes.
+     * Parameters: (nodeId, nodeType) - e.g., ("osc1", "oscillator") or ("filter1", "filter")
+     */
+    using NodeSelectionCallback = std::function<void(const std::string& nodeId, const std::string& nodeType)>;
+
     explicit SignalFlowView(ProbeManager& probeManager);
     ~SignalFlowView() override;
 
@@ -47,6 +53,11 @@ public:
      * Set callback for when user clicks a probe point.
      */
     void setProbeSelectionCallback(ProbeSelectionCallback callback);
+
+    /**
+     * Set callback for when user clicks a node (for syncing with control panels).
+     */
+    void setNodeSelectionCallback(NodeSelectionCallback callback);
 
     /**
      * Update the visual to reflect the current probe selection.
@@ -179,6 +190,7 @@ private:
 
     ProbeManager& probeManager;
     ProbeSelectionCallback selectionCallback;
+    NodeSelectionCallback nodeSelectionCallback;
     ProbeRegistry* probeRegistry = nullptr;
     SignalGraph* signalGraph = nullptr;
 

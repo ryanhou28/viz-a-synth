@@ -103,6 +103,11 @@ void SingleCycleView::paint(juce::Graphics& g)
     // Draw voice mode toggle
     drawVoiceModeToggle(g, bounds);
 
+    // Draw oscillator selector if multiple oscillators available
+    if (cachedOscillatorNodes.size() > 1) {
+        drawOscillatorSelector(g, bounds);
+    }
+
     // Draw frozen indicator
     if (frozen)
     {
@@ -116,6 +121,56 @@ void SingleCycleView::paint(juce::Graphics& g)
 void SingleCycleView::resized()
 {
     // Nothing special needed here
+}
+
+//==============================================================================
+// Per-Visualization Node Targeting
+//==============================================================================
+
+void SingleCycleView::setSignalGraph(SignalGraph* graph) {
+    signalGraph = graph;
+
+    cachedOscillatorNodes.clear();
+    if (graph) {
+        graph->forEachNode([this](const std::string& nodeId, const SignalNode* node) {
+            if (node && !node->canAcceptInput()) {
+                cachedOscillatorNodes.emplace_back(nodeId, node->getName());
+            }
+        });
+    }
+
+    if (targetNodeId.empty() && !cachedOscillatorNodes.empty()) {
+        setTargetNodeId(cachedOscillatorNodes[0].first);
+    }
+}
+
+void SingleCycleView::setTargetNodeId(const std::string& nodeId) {
+    if (targetNodeId != nodeId) {
+        targetNodeId = nodeId;
+        if (nodeSelectionCallback) {
+            nodeSelectionCallback("oscillator", targetNodeId);
+        }
+        updateTargetOscillator();
+    }
+}
+
+std::vector<std::pair<std::string, std::string>> SingleCycleView::getAvailableNodes() const {
+    return cachedOscillatorNodes;
+}
+
+void SingleCycleView::updateTargetOscillator() {
+    targetOscillatorNode = nullptr;
+
+    if (signalGraph && !targetNodeId.empty()) {
+        auto* node = signalGraph->getNode(targetNodeId);
+        if (node && !node->canAcceptInput()) {
+            targetOscillatorNode = node;
+        }
+    }
+
+    if (!frozen) {
+        repaint();
+    }
 }
 
 //==============================================================================
@@ -359,6 +414,40 @@ void SingleCycleView::mouseDown(const juce::MouseEvent& event)
 {
     auto pos = event.position;
 
+    // Check oscillator selector (if multiple oscillators)
+    if (cachedOscillatorNodes.size() > 1) {
+        if (oscSelectorBounds.contains(pos)) {
+            oscSelectorOpen = !oscSelectorOpen;
+            repaint();
+            return;
+        }
+
+        if (oscSelectorOpen) {
+            float itemHeight = 20.0f;
+            float dropdownY = oscSelectorBounds.getBottom() + 2.0f + 2.0f;
+
+            for (size_t i = 0; i < cachedOscillatorNodes.size(); ++i) {
+                juce::Rectangle<float> itemBounds(
+                    oscSelectorBounds.getX() + 4.0f,
+                    dropdownY + i * itemHeight,
+                    oscSelectorBounds.getWidth() - 8.0f,
+                    itemHeight
+                );
+
+                if (itemBounds.contains(pos)) {
+                    setTargetNodeId(cachedOscillatorNodes[i].first);
+                    oscSelectorOpen = false;
+                    repaint();
+                    return;
+                }
+            }
+
+            oscSelectorOpen = false;
+            repaint();
+            return;
+        }
+    }
+
     if (mixButtonBounds.contains(pos))
     {
         probeManager.setVoiceMode(VoiceMode::Mix);
@@ -368,6 +457,96 @@ void SingleCycleView::mouseDown(const juce::MouseEvent& event)
     {
         probeManager.setVoiceMode(VoiceMode::SingleVoice);
         repaint();
+    }
+}
+
+//==============================================================================
+// Oscillator Selector
+//==============================================================================
+
+void SingleCycleView::drawOscillatorSelector(juce::Graphics& g, juce::Rectangle<float> bounds) {
+    auto& config = ConfigurationManager::getInstance();
+
+    float selectorWidth = 120.0f;
+    float selectorHeight = 22.0f;
+    float padding = 8.0f;
+
+    // Position below the header
+    oscSelectorBounds = juce::Rectangle<float>(
+        bounds.getX() + padding,
+        bounds.getY() + 25.0f,
+        selectorWidth,
+        selectorHeight
+    );
+
+    std::string currentOscName = "Oscillator";
+    for (const auto& [id, name] : cachedOscillatorNodes) {
+        if (id == targetNodeId) {
+            currentOscName = name;
+            break;
+        }
+    }
+
+    g.setColour(juce::Colour(0xff2a2a3a));
+    g.fillRoundedRectangle(oscSelectorBounds, 4.0f);
+
+    g.setColour(juce::Colour(0xff4a4a6a));
+    g.drawRoundedRectangle(oscSelectorBounds, 4.0f, 1.0f);
+
+    g.setColour(config.getTextColour());
+    g.setFont(10.0f);
+    auto textBounds = oscSelectorBounds.reduced(8.0f, 2.0f);
+    g.drawText("Source: " + currentOscName, textBounds,
+               juce::Justification::centredLeft, true);
+
+    float arrowSize = 6.0f;
+    float arrowX = oscSelectorBounds.getRight() - arrowSize - 8.0f;
+    float arrowY = oscSelectorBounds.getCentreY();
+
+    juce::Path arrow;
+    arrow.startNewSubPath(arrowX, arrowY - arrowSize * 0.4f);
+    arrow.lineTo(arrowX + arrowSize * 0.5f, arrowY + arrowSize * 0.4f);
+    arrow.lineTo(arrowX + arrowSize, arrowY - arrowSize * 0.4f);
+
+    g.setColour(config.getTextDimColour());
+    g.strokePath(arrow, juce::PathStrokeType(1.5f));
+
+    if (oscSelectorOpen) {
+        float itemHeight = 20.0f;
+        float dropdownHeight = cachedOscillatorNodes.size() * itemHeight + 4.0f;
+
+        juce::Rectangle<float> dropdownBounds(
+            oscSelectorBounds.getX(),
+            oscSelectorBounds.getBottom() + 2.0f,
+            oscSelectorBounds.getWidth(),
+            dropdownHeight
+        );
+
+        g.setColour(juce::Colour(0xff1a1a2a));
+        g.fillRoundedRectangle(dropdownBounds, 4.0f);
+        g.setColour(juce::Colour(0xff4a4a6a));
+        g.drawRoundedRectangle(dropdownBounds, 4.0f, 1.0f);
+
+        float itemY = dropdownBounds.getY() + 2.0f;
+        for (const auto& [id, name] : cachedOscillatorNodes) {
+            juce::Rectangle<float> itemBounds(
+                dropdownBounds.getX() + 4.0f,
+                itemY,
+                dropdownBounds.getWidth() - 8.0f,
+                itemHeight
+            );
+
+            if (id == targetNodeId) {
+                g.setColour(juce::Colour(0xff3a3a5a));
+                g.fillRoundedRectangle(itemBounds, 2.0f);
+            }
+
+            g.setColour(id == targetNodeId ? config.getTextColour() : config.getTextDimColour());
+            g.setFont(10.0f);
+            g.drawText(name, itemBounds.reduced(4.0f, 0), juce::Justification::centredLeft);
+
+            itemY += itemHeight;
+        }
     }
 }
 
