@@ -11,6 +11,34 @@
 namespace vizasynth {
 
 /**
+ * Listener interface for probe registry changes.
+ * Implement this interface to be notified when probes are registered/unregistered
+ * or when the active probe selection changes.
+ */
+class ProbeRegistryListener {
+public:
+    virtual ~ProbeRegistryListener() = default;
+
+    /**
+     * Called when a new probe is registered.
+     * @param probeId The ID of the newly registered probe
+     */
+    virtual void onProbeRegistered(const std::string& probeId) = 0;
+
+    /**
+     * Called when a probe is unregistered.
+     * @param probeId The ID of the unregistered probe
+     */
+    virtual void onProbeUnregistered(const std::string& probeId) = 0;
+
+    /**
+     * Called when the active probe selection changes.
+     * @param probeId The ID of the newly selected probe (or empty string if cleared)
+     */
+    virtual void onActiveProbeChanged(const std::string& probeId) = 0;
+};
+
+/**
  * ProbeRegistry - Dynamic registry for probe points in the signal chain
  *
  * This class manages a dynamic set of probe points that can be registered
@@ -173,6 +201,25 @@ public:
     bool isProbeActive(const std::string& id) const;
 
     //=========================================================================
+    // Listener Management
+    //=========================================================================
+
+    /**
+     * Add a listener to be notified of registry changes.
+     * The listener will be notified when probes are registered/unregistered
+     * or when the active probe changes.
+     *
+     * @param listener Pointer to listener (must remain valid until removed)
+     */
+    void addListener(ProbeRegistryListener* listener);
+
+    /**
+     * Remove a previously added listener.
+     * @param listener Pointer to the listener to remove
+     */
+    void removeListener(ProbeRegistryListener* listener);
+
+    //=========================================================================
     // Utility
     //=========================================================================
 
@@ -186,6 +233,12 @@ private:
     mutable std::mutex mutex;  // Thread-safety for registration/querying
     std::map<std::string, ProbeInfo> probes;
     std::string activeProbeId;
+    std::vector<ProbeRegistryListener*> listeners;
+
+    // Internal notification methods (must be called with mutex locked)
+    void notifyProbeRegistered(const std::string& probeId);
+    void notifyProbeUnregistered(const std::string& probeId);
+    void notifyActiveProbeChanged(const std::string& probeId);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ProbeRegistry)
 };

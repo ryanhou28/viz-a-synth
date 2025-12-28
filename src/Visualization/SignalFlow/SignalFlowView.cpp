@@ -42,8 +42,16 @@ SignalFlowView::SignalFlowView(ProbeManager& pm)
 
 void SignalFlowView::setProbeRegistry(ProbeRegistry* registry)
 {
-    probeRegistry = registry;
+    // Remove listener from old registry
     if (probeRegistry) {
+        probeRegistry->removeListener(this);
+    }
+
+    probeRegistry = registry;
+
+    // Add listener to new registry
+    if (probeRegistry) {
+        probeRegistry->addListener(this);
         updateFromProbeRegistry();
     }
 }
@@ -101,7 +109,13 @@ void SignalFlowView::updateFromProbeRegistry()
     repaint();
 }
 
-SignalFlowView::~SignalFlowView() = default;
+SignalFlowView::~SignalFlowView()
+{
+    // Remove listener from registry if registered
+    if (probeRegistry) {
+        probeRegistry->removeListener(this);
+    }
+}
 
 void SignalFlowView::setProbeSelectionCallback(ProbeSelectionCallback callback)
 {
@@ -750,6 +764,42 @@ void SignalFlowView::drawBezierConnection(juce::Graphics& g, const BlockConnecti
     arrow.lineTo(end.x - arrowSize, end.y + arrowSize * 0.5f);
     arrow.closeSubPath();
     g.fillPath(arrow);
+}
+
+//==============================================================================
+// ProbeRegistryListener Implementation
+//==============================================================================
+
+void SignalFlowView::onProbeRegistered(const std::string& probeId)
+{
+    // Rebuild the signal flow diagram from the updated registry
+    updateFromProbeRegistry();
+    repaint();
+}
+
+void SignalFlowView::onProbeUnregistered(const std::string& probeId)
+{
+    // Rebuild the signal flow diagram from the updated registry
+    updateFromProbeRegistry();
+    repaint();
+}
+
+void SignalFlowView::onActiveProbeChanged(const std::string& probeId)
+{
+    // Update visual selection to highlight the active probe
+    // No need to rebuild blocks, just update selection state
+    for (auto& block : blocks) {
+        // Check if this block corresponds to the active probe
+        if (useDynamicProbes) {
+            // In dynamic mode, match by probe ID
+            if (block.probeId == probeId) {
+                block.isHovered = false;  // Clear hover state
+            }
+        }
+    }
+
+    // Trigger a repaint to show the updated selection
+    repaint();
 }
 
 } // namespace vizasynth

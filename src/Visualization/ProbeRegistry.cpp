@@ -27,6 +27,9 @@ bool ProbeRegistry::registerProbe(const std::string& id,
     // Register the probe
     probes[id] = ProbeInfo(id, displayName, processingType, buffer, color, orderIndex);
 
+    // Notify listeners (called with mutex locked)
+    notifyProbeRegistered(id);
+
     return true;
 }
 
@@ -43,6 +46,10 @@ bool ProbeRegistry::unregisterProbe(const std::string& id)
         activeProbeId.clear();
 
     probes.erase(it);
+
+    // Notify listeners (called with mutex locked)
+    notifyProbeUnregistered(id);
+
     return true;
 }
 
@@ -122,6 +129,10 @@ bool ProbeRegistry::setActiveProbe(const std::string& id)
         return false;
 
     activeProbeId = id;
+
+    // Notify listeners (called with mutex locked)
+    notifyActiveProbeChanged(id);
+
     return true;
 }
 
@@ -168,6 +179,81 @@ juce::Colour ProbeRegistry::getDefaultColor(const std::string& id)
         return juce::Colour(0xffffd93d);  // Yellow
     else
         return juce::Colour(0xffe0e0e0);  // Light gray (default)
+}
+
+void ProbeRegistry::addListener(ProbeRegistryListener* listener)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    if (listener == nullptr)
+        return;
+
+    // Check if already added
+    auto it = std::find(listeners.begin(), listeners.end(), listener);
+    if (it == listeners.end())
+        listeners.push_back(listener);
+}
+
+void ProbeRegistry::removeListener(ProbeRegistryListener* listener)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    auto it = std::find(listeners.begin(), listeners.end(), listener);
+    if (it != listeners.end())
+        listeners.erase(it);
+}
+
+void ProbeRegistry::notifyProbeRegistered(const std::string& probeId)
+{
+    // Note: mutex is already locked by the caller
+    // We need to copy the listeners vector to avoid issues if a listener
+    // modifies the registry during the callback
+    std::vector<ProbeRegistryListener*> listenersCopy = listeners;
+
+    // Release mutex before calling listeners to avoid deadlock
+    // (listeners might call back into the registry)
+    mutex.unlock();
+
+    for (auto* listener : listenersCopy)
+    {
+        if (listener != nullptr)
+            listener->onProbeRegistered(probeId);
+    }
+
+    // Re-lock the mutex before returning to caller
+    mutex.lock();
+}
+
+void ProbeRegistry::notifyProbeUnregistered(const std::string& probeId)
+{
+    // Note: mutex is already locked by the caller
+    std::vector<ProbeRegistryListener*> listenersCopy = listeners;
+
+    mutex.unlock();
+
+    for (auto* listener : listenersCopy)
+    {
+        if (listener != nullptr)
+            listener->onProbeUnregistered(probeId);
+    }
+
+    mutex.lock();
+}
+
+void ProbeRegistry::notifyActiveProbeChanged(const std::string& probeId)
+{
+    // Note: mutex is already locked by the caller
+    std::vector<ProbeRegistryListener*> listenersCopy = listeners;
+
+    mutex.unlock();
+
+    for (auto* listener : listenersCopy)
+    {
+        if (listener != nullptr)
+            listener->onActiveProbeChanged(probeId);
+    }
+
+    mutex.lock();
 }
 
 } // namespace vizasynth

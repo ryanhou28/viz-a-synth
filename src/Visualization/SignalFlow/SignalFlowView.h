@@ -30,8 +30,10 @@ namespace vizasynth {
  *   - Clickable nodes to select probe points
  *   - Highlighted indication of currently selected probe
  *   - Processing type labels for each block
+ *   - Automatic updates when ProbeRegistry changes (via listener)
  */
-class SignalFlowView : public juce::Component {
+class SignalFlowView : public juce::Component,
+                       public ProbeRegistryListener {
 public:
     /**
      * Callback type for probe point selection changes.
@@ -75,6 +77,13 @@ public:
      * Call this when the graph topology changes.
      */
     void updateFromSignalGraph();
+
+    //=========================================================================
+    // ProbeRegistryListener Overrides
+    //=========================================================================
+    void onProbeRegistered(const std::string& probeId) override;
+    void onProbeUnregistered(const std::string& probeId) override;
+    void onActiveProbeChanged(const std::string& probeId) override;
 
     //=========================================================================
     // juce::Component Overrides
