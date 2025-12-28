@@ -1,4 +1,7 @@
 #include "SignalFlowView.h"
+#include "../../DSP/SignalGraph.h"
+#include <map>
+#include <algorithm>
 
 namespace vizasynth {
 
@@ -140,16 +143,25 @@ void SignalFlowView::paint(juce::Graphics& g)
         activeProbe = probeManager.getActiveProbe();
     }
 
-    // Draw arrows first (so blocks appear on top)
+    // Draw connections/arrows first (so blocks appear on top)
     g.setColour(juce::Colour(0xff606080));
-    for (size_t i = 0; i < blocks.size() - 1; ++i) {
-        auto& current = blocks[i];
-        auto& next = blocks[i + 1];
 
-        juce::Point<float> from(current.bounds.getRight(), current.bounds.getCentreY());
-        juce::Point<float> to(next.bounds.getX(), next.bounds.getCentreY());
+    if (useGraphLayout && !connections.empty()) {
+        // Graph mode: draw Bezier curves for each connection
+        for (const auto& conn : connections) {
+            drawBezierConnection(g, conn);
+        }
+    } else {
+        // Linear mode: draw simple arrows between consecutive blocks
+        for (size_t i = 0; i < blocks.size() - 1; ++i) {
+            auto& current = blocks[i];
+            auto& next = blocks[i + 1];
 
-        drawArrow(g, from, to);
+            juce::Point<float> from(current.bounds.getRight(), current.bounds.getCentreY());
+            juce::Point<float> to(next.bounds.getX(), next.bounds.getCentreY());
+
+            drawArrow(g, from, to);
+        }
     }
 
     // Draw blocks
@@ -360,18 +372,62 @@ void SignalFlowView::resized()
     bounds.removeFromTop(16.0f);
     bounds = bounds.reduced(blockPadding, 4.0f);
 
-    // Calculate block dimensions
-    int numBlocks = static_cast<int>(blocks.size());
-    float totalArrowSpace = arrowGap * (numBlocks - 1);
-    float availableWidth = bounds.getWidth() - totalArrowSpace;
-    float blockWidth = availableWidth / numBlocks;
-    float blockHeight = bounds.getHeight();
+    if (useGraphLayout) {
+        // Graph mode: hierarchical layout based on layers
+        // Find max layer and max nodes per layer
+        int maxLayer = 0;
+        std::map<int, int> nodesPerLayer;
 
-    // Position each block
-    float x = bounds.getX();
-    for (auto& block : blocks) {
-        block.bounds = juce::Rectangle<float>(x, bounds.getY(), blockWidth, blockHeight);
-        x += blockWidth + arrowGap;
+        for (const auto& block : blocks) {
+            maxLayer = std::max(maxLayer, block.layer);
+            nodesPerLayer[block.layer]++;
+        }
+
+        int numLayers = maxLayer + 1;
+
+        // Calculate available space
+        float availableWidth = bounds.getWidth();
+        float availableHeight = bounds.getHeight();
+
+        // Determine block size and spacing
+        float actualBlockWidth = std::min(blockWidth, availableWidth / (numLayers + 1));
+        float actualBlockHeight = blockHeight;
+
+        // Position blocks according to their layer and position in layer
+        for (auto& block : blocks) {
+            // X position based on layer
+            float x = bounds.getX() + block.layer * layerSpacing;
+
+            // Center blocks within available width if we have room
+            if ((numLayers * layerSpacing) < availableWidth) {
+                float offset = (availableWidth - (numLayers - 1) * layerSpacing - actualBlockWidth) * 0.5f;
+                x += offset;
+            }
+
+            // Y position based on position in layer
+            int numNodesInLayer = nodesPerLayer[block.layer];
+            float totalHeight = numNodesInLayer * actualBlockHeight + (numNodesInLayer - 1) * nodeSpacing;
+            float yOffset = (availableHeight - totalHeight) * 0.5f;
+            float y = bounds.getY() + yOffset + block.positionInLayer * (actualBlockHeight + nodeSpacing);
+
+            block.bounds = juce::Rectangle<float>(x, y, actualBlockWidth, actualBlockHeight);
+        }
+    } else {
+        // Linear mode: horizontal layout (original behavior)
+        int numBlocks = static_cast<int>(blocks.size());
+        if (numBlocks == 0) return;
+
+        float totalArrowSpace = arrowGap * (numBlocks - 1);
+        float availableWidth = bounds.getWidth() - totalArrowSpace;
+        float blockWidth = availableWidth / numBlocks;
+        float blockHeight = bounds.getHeight();
+
+        // Position each block
+        float x = bounds.getX();
+        for (auto& block : blocks) {
+            block.bounds = juce::Rectangle<float>(x, bounds.getY(), blockWidth, blockHeight);
+            x += blockWidth + arrowGap;
+        }
     }
 }
 
@@ -471,6 +527,229 @@ int SignalFlowView::findBlockAtPoint(juce::Point<float> point) const
         }
     }
     return -1;
+}
+
+//==============================================================================
+// Graph-based visualization methods
+//==============================================================================
+
+void SignalFlowView::setSignalGraph(SignalGraph* graph)
+{
+    signalGraph = graph;
+    if (signalGraph) {
+        updateFromSignalGraph();
+    }
+}
+
+void SignalFlowView::updateFromSignalGraph()
+{
+    if (!signalGraph) {
+        useGraphLayout = false;
+        return;
+    }
+
+    useGraphLayout = true;
+    blocks.clear();
+    connections.clear();
+
+    // Create a block for each node in the graph
+    auto nodeIds = signalGraph->getNodeIds();
+    std::map<std::string, int> nodeIdToBlockIndex;
+
+    for (size_t i = 0; i < nodeIds.size(); ++i) {
+        const auto& nodeId = nodeIds[i];
+        auto* node = signalGraph->getNode(nodeId);
+        if (!node) continue;
+
+        SignalBlock block;
+        block.nodeId = nodeId;
+        block.name = node->getName();
+        block.processingType = node->getProcessingType();
+        block.equation = getEquationForProcessingType(block.processingType, block.name);
+        block.probeId = nodeId + ".output";
+        block.color = node->getProbeColor();
+        block.probePoint = ProbePoint::Output;  // Default
+        block.isSelectable = true;
+        block.isHovered = false;
+        block.showEquation = false;
+        block.layer = 0;
+        block.positionInLayer = static_cast<int>(i);
+
+        nodeIdToBlockIndex[nodeId] = static_cast<int>(blocks.size());
+        blocks.push_back(block);
+    }
+
+    // Create connections based on graph topology
+    auto graphConnections = signalGraph->getConnections();
+    for (const auto& conn : graphConnections) {
+        auto sourceIt = nodeIdToBlockIndex.find(conn.sourceNode);
+        auto destIt = nodeIdToBlockIndex.find(conn.destNode);
+
+        if (sourceIt != nodeIdToBlockIndex.end() && destIt != nodeIdToBlockIndex.end()) {
+            BlockConnection blockConn;
+            blockConn.sourceBlockIndex = sourceIt->second;
+            blockConn.destBlockIndex = destIt->second;
+            blockConn.color = juce::Colour(0xff606080);  // Default connection color
+            blockConn.isHovered = false;
+            connections.push_back(blockConn);
+        }
+    }
+
+    // Add envelope block if not using graph
+    // (Envelope is separate from graph, applied after)
+    SignalBlock envBlock;
+    envBlock.name = "ENV";
+    envBlock.processingType = "Time-varying Gain";
+    envBlock.equation = "y[n] = x[n]·g(t)";
+    envBlock.probeId = "envelope";
+    envBlock.color = juce::Colour(0xffffd93d);  // Yellow
+    envBlock.probePoint = ProbePoint::PostEnvelope;
+    envBlock.isSelectable = false;
+    envBlock.isHovered = false;
+    envBlock.showEquation = false;
+    envBlock.nodeId = "envelope";
+    blocks.push_back(envBlock);
+
+    // Compute hierarchical layout
+    computeHierarchicalLayout();
+
+    resized();
+    repaint();
+}
+
+void SignalFlowView::computeHierarchicalLayout()
+{
+    if (blocks.empty() || connections.empty()) {
+        // Simple linear layout if no connections
+        for (size_t i = 0; i < blocks.size(); ++i) {
+            blocks[i].layer = static_cast<int>(i);
+            blocks[i].positionInLayer = 0;
+        }
+        return;
+    }
+
+    // Step 1: Assign layers (longest path from sources)
+    assignLayersToBlocks();
+
+    // Step 2: Minimize crossings (optional, can be expensive)
+    // minimizeCrossings();
+
+    // Step 3: Position blocks within layers
+    positionBlocksInLayers();
+}
+
+void SignalFlowView::assignLayersToBlocks()
+{
+    // Use longest path layering algorithm
+    // This ensures nodes are placed in layers based on their distance from source nodes
+
+    // Initialize all blocks to layer 0
+    for (auto& block : blocks) {
+        block.layer = 0;
+    }
+
+    // Find all nodes with no incoming connections (sources)
+    std::vector<int> inDegree(blocks.size(), 0);
+    for (const auto& conn : connections) {
+        if (conn.destBlockIndex >= 0 && conn.destBlockIndex < static_cast<int>(blocks.size())) {
+            inDegree[conn.destBlockIndex]++;
+        }
+    }
+
+    // Compute longest path to each node using topological traversal
+    std::vector<int> queue;
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        if (inDegree[i] == 0) {
+            queue.push_back(static_cast<int>(i));
+        }
+    }
+
+    std::vector<int> tempInDegree = inDegree;
+    while (!queue.empty()) {
+        int current = queue.front();
+        queue.erase(queue.begin());
+
+        // Process all outgoing connections
+        for (const auto& conn : connections) {
+            if (conn.sourceBlockIndex == current) {
+                int dest = conn.destBlockIndex;
+                if (dest >= 0 && dest < static_cast<int>(blocks.size())) {
+                    // Update layer: destination is at least one layer after source
+                    blocks[dest].layer = std::max(blocks[dest].layer, blocks[current].layer + 1);
+
+                    tempInDegree[dest]--;
+                    if (tempInDegree[dest] == 0) {
+                        queue.push_back(dest);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void SignalFlowView::minimizeCrossings()
+{
+    // Placeholder for crossing minimization
+    // This is a complex optimization problem (barycenter heuristic is common)
+    // For now, we'll keep the simple ordering
+}
+
+void SignalFlowView::positionBlocksInLayers()
+{
+    // Group blocks by layer
+    std::map<int, std::vector<int>> layerToBlocks;
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        layerToBlocks[blocks[i].layer].push_back(static_cast<int>(i));
+    }
+
+    // Assign position within each layer
+    for (auto& pair : layerToBlocks) {
+        auto& blockIndices = pair.second;
+        for (size_t i = 0; i < blockIndices.size(); ++i) {
+            blocks[blockIndices[i]].positionInLayer = static_cast<int>(i);
+        }
+    }
+}
+
+void SignalFlowView::drawBezierConnection(juce::Graphics& g, const BlockConnection& conn)
+{
+    if (conn.sourceBlockIndex < 0 || conn.sourceBlockIndex >= static_cast<int>(blocks.size()) ||
+        conn.destBlockIndex < 0 || conn.destBlockIndex >= static_cast<int>(blocks.size())) {
+        return;
+    }
+
+    const auto& sourceBlock = blocks[conn.sourceBlockIndex];
+    const auto& destBlock = blocks[conn.destBlockIndex];
+
+    // Connection start point (right edge of source block)
+    juce::Point<float> start(sourceBlock.bounds.getRight(), sourceBlock.bounds.getCentreY());
+
+    // Connection end point (left edge of destination block)
+    juce::Point<float> end(destBlock.bounds.getX(), destBlock.bounds.getCentreY());
+
+    // Control points for Bezier curve
+    float controlPointOffset = (end.x - start.x) * 0.5f;
+    juce::Point<float> cp1(start.x + controlPointOffset, start.y);
+    juce::Point<float> cp2(end.x - controlPointOffset, end.y);
+
+    // Create Bezier path
+    juce::Path path;
+    path.startNewSubPath(start);
+    path.cubicTo(cp1, cp2, end);
+
+    // Draw the curve
+    auto color = conn.isHovered ? conn.color.brighter(0.5f) : conn.color;
+    g.setColour(color);
+    g.strokePath(path, juce::PathStrokeType(1.5f));
+
+    // Draw arrowhead at end
+    juce::Path arrow;
+    float arrowSize = arrowHeadSize;
+    arrow.startNewSubPath(end.x, end.y);
+    arrow.lineTo(end.x - arrowSize, end.y - arrowSize * 0.5f);
+    arrow.lineTo(end.x - arrowSize, end.y + arrowSize * 0.5f);
+    arrow.closeSubPath();
+    g.fillPath(arrow);
 }
 
 } // namespace vizasynth
