@@ -331,6 +331,15 @@ void ChainEditor::paint(juce::Graphics& g)
     }
 }
 
+void ChainEditor::visibilityChanged()
+{
+    // Rebuild visuals when component becomes visible
+    // This ensures proper layout after canvasArea is sized
+    if (isVisible() && currentGraph) {
+        rebuildVisualsFromGraph();
+    }
+}
+
 void ChainEditor::resized()
 {
     auto bounds = getLocalBounds();
@@ -566,30 +575,37 @@ void ChainEditor::rebuildVisualsFromGraph()
         return;
     }
 
-    // Create visuals for nodes
+    // Use topological order to ensure nodes are displayed in signal flow order
+    // (oscillator before filter, etc.) rather than alphabetical map order
+    auto processingOrder = currentGraph->computeProcessingOrder();
+
+    // Use a reasonable default width if canvasArea isn't sized yet
+    int canvasWidth = canvasArea.getWidth() > 0 ? canvasArea.getWidth() : 800;
     int xPos = 100;
     int yPos = 100;
     const int spacing = 150;
 
-    currentGraph->forEachNode([&](const std::string& id, const SignalNode* node) {
-        if (!node) return;
+    // Create visuals for nodes in topological order
+    for (const auto& id : processingOrder) {
+        auto* node = currentGraph->getNode(id);
+        if (!node) continue;
 
         NodeVisual visual;
         visual.id = id;
         visual.displayName = node->getName();
-        visual.type = "unknown";  // TODO: Store type in graph
-        visual.position = juce::Point<float>(xPos, yPos);
-        visual.bounds = juce::Rectangle<float>(xPos, yPos, nodeWidth, nodeHeight);
+        visual.type = "unknown";
+        visual.position = juce::Point<float>(static_cast<float>(xPos), static_cast<float>(yPos));
+        visual.bounds = juce::Rectangle<float>(static_cast<float>(xPos), static_cast<float>(yPos), nodeWidth, nodeHeight);
         visual.color = node->getProbeColor();
 
         nodeVisuals.push_back(visual);
 
         xPos += spacing;
-        if (xPos > canvasArea.getWidth() - 100) {
+        if (xPos > canvasWidth - 100) {
             xPos = 100;
             yPos += spacing;
         }
-    });
+    }
 
     // Mark the output node
     auto outputId = currentGraph->getOutputNode();

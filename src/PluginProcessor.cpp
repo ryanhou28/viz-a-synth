@@ -37,7 +37,7 @@ void VizASynthVoice::initializeDefaultGraph()
     processingGraph.addNode(std::move(filterModule), "filter1");
 
     // Connect OSC -> FILTER
-    processingGraph.connect("osc1", "filter1");
+    [[maybe_unused]] bool connected = processingGraph.connect("osc1", "filter1");
 
     // Set filter1 as the output node
     processingGraph.setOutputNode("filter1");
@@ -48,8 +48,15 @@ void VizASynthVoice::initializeDefaultGraph()
     #if JUCE_DEBUG
     juce::Logger::writeToLog("VizASynthVoice::initializeDefaultGraph() - Graph initialized");
     juce::Logger::writeToLog("  Nodes: osc1, filter1");
-    juce::Logger::writeToLog("  Connection: osc1 -> filter1");
+    juce::Logger::writeToLog("  Connection osc1->filter1: " + juce::String(connected ? "SUCCESS" : "FAILED"));
     juce::Logger::writeToLog("  Output node: filter1");
+
+    // Verify connections are stored
+    auto conns = processingGraph.getConnections();
+    juce::Logger::writeToLog("  Stored connections count: " + juce::String(conns.size()));
+    for (const auto& c : conns) {
+        juce::Logger::writeToLog("    " + juce::String(c.sourceNode) + " -> " + juce::String(c.destNode));
+    }
 
     auto order = processingGraph.computeProcessingOrder();
     juce::Logger::writeToLog("  Processing order size: " + juce::String(order.size()));
@@ -213,9 +220,10 @@ void VizASynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
         }
 
         // Apply envelope (separate from graph - time-varying gain)
-        float env = adsr.getNextSample();
+        // When envelope is disabled, use full amplitude (gate-style behavior)
+        float env = envelopeEnabled ? adsr.getNextSample() : 1.0f;
 
-        if (!adsr.isActive())
+        if (envelopeEnabled && !adsr.isActive())
         {
             clearCurrentNote();
             return;
@@ -444,6 +452,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout VizASynthAudioProcessor::cre
         "resonance", "Filter Resonance",
         juce::NormalisableRange<float>(0.1f, 10.0f, 0.1f), 0.707f));
 
+    // Envelope enabled toggle
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        "envelopeEnabled", "Envelope Enabled", true));
+
     // ADSR parameters
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         "attack", "Attack",
@@ -480,6 +492,7 @@ void VizASynthAudioProcessor::updateVoiceParameters()
     auto filterType = apvts.getRawParameterValue("filterType")->load();
     auto cutoff = apvts.getRawParameterValue("cutoff")->load();
     auto resonance = apvts.getRawParameterValue("resonance")->load();
+    auto envelopeEnabled = apvts.getRawParameterValue("envelopeEnabled")->load() > 0.5f;
     auto attack = apvts.getRawParameterValue("attack")->load();
     auto decay = apvts.getRawParameterValue("decay")->load();
     auto sustain = apvts.getRawParameterValue("sustain")->load();
@@ -494,6 +507,7 @@ void VizASynthAudioProcessor::updateVoiceParameters()
             voice->setFilterType(static_cast<int>(filterType));
             voice->setFilterCutoff(cutoff);
             voice->setFilterResonance(resonance);
+            voice->setEnvelopeEnabled(envelopeEnabled);
             voice->setADSR(attack, decay, sustain, release);
         }
     }

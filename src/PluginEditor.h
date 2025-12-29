@@ -79,6 +79,9 @@ private:
     void onOscillatorSelected();
     void onFilterSelected();
 
+    // UI visibility helpers
+    void setLeftPanelControlsVisible(bool visible);
+
     VizASynthAudioProcessor& audioProcessor;
 
     // Track active note count for envelope visualization
@@ -134,6 +137,7 @@ private:
     juce::Slider decaySlider;
     juce::Slider sustainSlider;
     juce::Slider releaseSlider;
+    juce::ToggleButton envelopeEnabledToggle{"ON"};
 
     juce::Label oscTypeLabel;
     juce::Label filterTypeLabel;
@@ -170,6 +174,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> filterTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cutoffAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> resonanceAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> envelopeEnabledAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attackAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> decayAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> sustainAttachment;

@@ -308,6 +308,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     chainEditorButton.onClick = [this]() {
         showChainEditor = chainEditorButton.getToggleState();
         chainEditor.setVisible(showChainEditor);
+        setLeftPanelControlsVisible(!showChainEditor);
         resized();
     };
     addAndMakeVisible(chainEditorButton);
@@ -336,6 +337,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
         showChainEditor = false;
         chainEditor.setVisible(false);
         chainEditorButton.setToggleState(false, juce::dontSendNotification);
+        setLeftPanelControlsVisible(true);
         resized();
     });
 
@@ -390,6 +392,12 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
 
     resonanceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "resonance", resonanceSlider);
+
+    // Envelope enabled toggle
+    envelopeEnabledToggle.setToggleState(true, juce::dontSendNotification);
+    addAndMakeVisible(envelopeEnabledToggle);
+    envelopeEnabledAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        apvts, "envelopeEnabled", envelopeEnabledToggle);
 
     attackAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "attack", attackSlider);
@@ -688,6 +696,10 @@ void VizASynthAudioProcessorEditor::resized()
 
     // Envelope section
     int envVisY = envY + layout.envVisYOffset;
+
+    // Envelope ON/OFF toggle (top-left of envelope panel)
+    envelopeEnabledToggle.setBounds(panelX + layout.panelInnerMargin, envY + 5, 50, 20);
+
     envelopeVisualizer.setBounds(panelX + layout.panelInnerMargin + layout.envVisXOffset, envVisY, layout.envPanelW - 2 * layout.panelInnerMargin, layout.envelopeVisHeight);
     int envKnobY = envVisY + layout.envelopeVisHeight + layout.envKnobYOffset;
     for (int i = 0; i < 4; ++i) {
@@ -1306,4 +1318,38 @@ void VizASynthAudioProcessorEditor::onFilterSelected()
     });
 
     updateFilterPanel();
+}
+
+void VizASynthAudioProcessorEditor::setLeftPanelControlsVisible(bool visible)
+{
+    // Oscillator controls
+    oscNodeSelector.setVisible(visible);
+    oscTypeLabel.setVisible(visible);
+    oscTypeCombo.setVisible(visible);
+    bandLimitedToggle.setVisible(visible);
+    detuneLabel.setVisible(visible);
+    detuneSlider.setVisible(visible);
+    octaveLabel.setVisible(visible);
+    octaveSlider.setVisible(visible);
+
+    // Filter controls
+    filterNodeSelector.setVisible(visible);
+    filterTypeLabel.setVisible(visible);
+    filterTypeCombo.setVisible(visible);
+    cutoffLabel.setVisible(visible);
+    cutoffSlider.setVisible(visible);
+    resonanceLabel.setVisible(visible);
+    resonanceSlider.setVisible(visible);
+
+    // Envelope controls
+    envelopeEnabledToggle.setVisible(visible);
+    envelopeVisualizer.setVisible(visible);
+    attackSlider.setVisible(visible);
+    attackLabel.setVisible(visible);
+    decaySlider.setVisible(visible);
+    decayLabel.setVisible(visible);
+    sustainSlider.setVisible(visible);
+    sustainLabel.setVisible(visible);
+    releaseSlider.setVisible(visible);
+    releaseLabel.setVisible(visible);
 }

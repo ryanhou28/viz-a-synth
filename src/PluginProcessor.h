@@ -61,6 +61,7 @@ public:
     void setFilterCutoff(float cutoff);
     void setFilterResonance(float resonance);
     void setADSR(float attack, float decay, float sustain, float release);
+    void setEnvelopeEnabled(bool enabled) { envelopeEnabled = enabled; }
 
     // Probe system
     void setProbeManager(vizasynth::ProbeManager* manager) { probeManager = manager; }
@@ -101,6 +102,7 @@ private:
     // Envelope (kept separate from chain - time-varying gain)
     juce::ADSR adsr;
     juce::ADSR::Parameters adsrParams;
+    bool envelopeEnabled = true;  // When false, envelope is bypassed (full amplitude)
 
     double currentSampleRate = 44100.0;
     int currentMidiNote = 0;
