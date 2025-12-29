@@ -3,6 +3,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../DSP/SignalGraph.h"
 #include "../DSP/SignalNodeFactory.h"
+#include "../DSP/Oscillators/OscillatorSource.h"
+#include "../DSP/Filters/FilterNode.h"
 #include "../Visualization/ProbeRegistry.h"
 #include <memory>
 #include <vector>
@@ -265,7 +267,10 @@ private:
     /**
      * Properties Panel - Shows parameters for selected node
      */
-    class PropertiesPanel : public juce::Component {
+    class PropertiesPanel : public juce::Component,
+                            public juce::Slider::Listener,
+                            public juce::ComboBox::Listener,
+                            public juce::Button::Listener {
     public:
         PropertiesPanel(ChainEditor& editor);
 
@@ -275,14 +280,40 @@ private:
         void setSelectedNode(const std::string& nodeId);
         void clearSelection();
 
+        // Listener callbacks
+        void sliderValueChanged(juce::Slider* slider) override;
+        void comboBoxChanged(juce::ComboBox* comboBox) override;
+        void buttonClicked(juce::Button* button) override;
+
     private:
         ChainEditor& owner;
         std::string selectedNodeId;
 
         // Parameter controls (dynamically created)
         juce::OwnedArray<juce::Component> parameterControls;
+        juce::OwnedArray<juce::Label> parameterLabels;
+
+        // Specific controls for quick access
+        juce::ComboBox* waveformCombo = nullptr;
+        juce::Slider* detuneSlider = nullptr;
+        juce::Slider* octaveSlider = nullptr;
+        juce::ToggleButton* bandLimitedToggle = nullptr;
+
+        juce::ComboBox* filterTypeCombo = nullptr;
+        juce::Slider* cutoffSlider = nullptr;
+        juce::Slider* resonanceSlider = nullptr;
+
+        juce::ToggleButton* probeVisibleToggle = nullptr;
+
+        // Section labels
+        std::unique_ptr<juce::Label> nodeNameLabel;
+        std::unique_ptr<juce::Label> nodeTypeLabel;
 
         void rebuildControls();
+        void createOscillatorControls(OscillatorSource* osc);
+        void createFilterControls(FilterNode* filter);
+        void createMixerControls(SignalNode* mixer);
+        void createProbeVisibilityControl();
     };
 
     //=========================================================================
@@ -319,7 +350,24 @@ private:
     std::unique_ptr<ModulePalette> palette;
     std::unique_ptr<PropertiesPanel> propertiesPanel;
 
-    // Visual constants
+    // Visual dimensions (loaded from config, fallbacks provided)
+    float getNodeWidth() const;
+    float getNodeHeight() const;
+    float getPortRadius() const;
+    float getConnectionThickness() const;
+    int getPaletteWidth() const;
+    int getPropertiesWidth() const;
+    float getHitThreshold() const;
+    int getGridSize() const;
+    int getNodeSpacing() const;
+
+    // Color accessors
+    juce::Colour getInputPortColor() const;
+    juce::Colour getOutputPortColor() const;
+    juce::Colour getConnectionColor() const;
+    juce::Colour getConnectionHoverColor() const;
+
+    // Legacy static constants (for backward compatibility with unchanged code paths)
     static constexpr float nodeWidth = 120.0f;
     static constexpr float nodeHeight = 60.0f;
     static constexpr float portRadius = 8.0f;

@@ -88,5 +88,24 @@
       "panelTitle": 20,
       "label": 14
     }
+  },
+  "chainEditor": {
+    "nodeWidth": 120,
+    "nodeHeight": 60,
+    "portRadius": 8,
+    "connectionThickness": 3,
+    "paletteWidth": 150,
+    "propertiesWidth": 200,
+    "hitThreshold": 10,
+    "gridSize": 20,
+    "defaultCanvasWidth": 800,
+    "nodeSpacing": 150,
+    "colors": {
+      "inputPort": "#00ff00",
+      "outputPort": "#ff0000",
+      "connection": "#ffffffcc",
+      "connectionHover": "#ffffffee",
+      "canvasGrid": "#252525"
+    }
   }
 }

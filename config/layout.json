@@ -157,6 +157,18 @@
         "defaultValue": 10.0
       }
     },
+    "chainEditor": {
+      "nodeWidth": 120,
+      "nodeHeight": 60,
+      "portRadius": 8,
+      "connectionThickness": 3,
+      "paletteWidth": 150,
+      "propertiesWidth": 200,
+      "hitThreshold": 10,
+      "gridSize": 20,
+      "defaultCanvasWidth": 800,
+      "nodeSpacing": 150
+    },
     "oscilloscope": {
       "triggerHysteresis": 0.01,
       "minAmplitudeThreshold": 0.001,

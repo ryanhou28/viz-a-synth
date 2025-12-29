@@ -164,6 +164,13 @@ public:
 
     bool isLTI() const override { return false; }  // Oscillators are signal generators, not LTI
 
+    /**
+     * Get the probe color for oscillators (orange from theme).
+     */
+    juce::Colour getProbeColor() const override {
+        return juce::Colour(0xffFF9500);  // Orange - matches theme.json probes.oscillator
+    }
+
     // Oscillators don't have traditional transfer functions in the LTI sense,
     // but we could provide spectral information. For now, analysis is not supported.
     bool supportsAnalysis() const override { return false; }

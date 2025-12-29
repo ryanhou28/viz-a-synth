@@ -92,6 +92,13 @@ public:
     bool isLTI() const override { return true; }
 
     /**
+     * Get the probe color for filters (purple from theme).
+     */
+    juce::Colour getProbeColor() const override {
+        return juce::Colour(0xffBB86FC);  // Purple - matches theme.json probes.filter
+    }
+
+    /**
      * Get the transfer function H(z).
      * Must be implemented by all filter types.
      */

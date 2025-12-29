@@ -1,11 +1,9 @@
 #pragma once
 
-#include "../DSP/SignalChain.h"
-#include "../DSP/SignalNodeFactory.h"
 #include <juce_core/juce_core.h>
 #include <string>
 #include <vector>
-#include <optional>
+#include <map>
 
 namespace vizasynth {
 
@@ -43,6 +41,9 @@ struct EnvelopeConfig {
  *   - Declarative chain definition
  *   - Default configurations for common setups
  *   - Future support for user-defined chains
+ *
+ * Note: This class now only provides configuration data. Building actual
+ * signal chains is done via SignalGraph and SignalNodeFactory directly.
  *
  * JSON Format:
  * {
@@ -85,24 +86,6 @@ public:
      * This matches the original hardcoded chain.
      */
     static ChainConfiguration createDefault();
-
-    /**
-     * Build a SignalChain from this configuration.
-     * @return A configured SignalChain, or nullptr on error
-     */
-    std::unique_ptr<SignalChain> buildChain() const;
-
-    /**
-     * Apply this configuration to an existing SignalChain.
-     * Clears the chain and rebuilds it from config.
-     * @param chain The chain to configure
-     * @param outOscillator Optional output pointer for the oscillator
-     * @param outFilter Optional output pointer for the filter
-     * @return true if successful
-     */
-    bool applyToChain(SignalChain& chain,
-                      PolyBLEPOscillator** outOscillator = nullptr,
-                      StateVariableFilterWrapper** outFilter = nullptr) const;
 
     // Accessors
     const std::string& getName() const { return name; }
