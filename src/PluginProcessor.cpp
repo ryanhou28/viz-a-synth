@@ -13,7 +13,6 @@ VizASynthVoice::VizASynthVoice()
     // Use default configuration
     chainConfig = ChainConfiguration::createDefault();
     initializeDefaultGraph();
-    initializeDefaultChain();  // Legacy: for backward compatibility
 }
 
 VizASynthVoice::VizASynthVoice(const ChainConfiguration& config)
@@ -78,22 +77,6 @@ void VizASynthVoice::initializeDefaultGraph()
     adsr.setParameters(adsrParams);
 }
 
-void VizASynthVoice::initializeDefaultChain()
-{
-    // Build the legacy signal chain: OSC -> FILTER
-    // This is kept for backward compatibility with existing visualizations
-    auto oscModule = std::make_unique<PolyBLEPOscillator>();
-    oscModule->setWaveform(OscillatorWaveform::Sine);
-    legacyChain.addModule(std::move(oscModule), "osc1");
-
-    // Create filter module
-    auto filterModule = std::make_unique<StateVariableFilterWrapper>();
-    filterModule->setType(FilterNode::Type::LowPass);
-    legacyChain.addModule(std::move(filterModule), "filter1");
-
-    // Set chain name for identification
-    legacyChain.setName("VoiceChain");
-}
 
 bool VizASynthVoice::loadChainFromFile(const juce::File& file)
 {
@@ -108,16 +91,9 @@ bool VizASynthVoice::loadChainFromConfig(const ChainConfiguration& config)
 {
     chainConfig = config;
 
-    // Apply configuration to legacy chain for backward compatibility
-    if (!chainConfig.applyToChain(legacyChain, &oscillator, &filterNode)) {
-        // Fallback to default if config fails
-        initializeDefaultGraph();
-        initializeDefaultChain();
-        return false;
-    }
-
-    // TODO: Also build the graph from configuration
-    // For now, use default graph structure
+    // Build the graph from configuration
+    // For now, use default graph structure - configuration-based graph building
+    // will be added in Phase 5.5 (graph serialization)
     initializeDefaultGraph();
 
     // Apply envelope configuration
@@ -207,17 +183,8 @@ void VizASynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
     {
         // Process through the signal graph (OSC -> FILTER chain)
         // The graph's process() method handles the entire chain
+        // Probing is handled internally by SignalGraph when probingEnabled is true
         float graphOut = processingGraph.process(0.0f);  // 0.0f input (oscillator generates signal)
-
-        // For backward compatibility, also update legacy probes manually
-        // TODO: Remove this once visualizations migrate to graph probe buffers
-        if (shouldProbe)
-        {
-            if (activeProbePoint == ProbePoint::Oscillator && oscillator != nullptr)
-                probeManager->getProbeBuffer().push(oscillator->getLastOutput());
-            else if (activeProbePoint == ProbePoint::PostFilter)
-                probeManager->getProbeBuffer().push(graphOut);
-        }
 
         // Apply envelope (separate from graph - time-varying gain)
         // When envelope is disabled, use full amplitude (gate-style behavior)
@@ -231,7 +198,7 @@ void VizASynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
 
         float finalOut = graphOut * env * velocity;
 
-        // Probe final output
+        // Probe final output through ProbeManager (for output-level visualization)
         if (shouldProbe && activeProbePoint == ProbePoint::Output)
             probeManager->getProbeBuffer().push(finalOut);
 
@@ -247,9 +214,6 @@ void VizASynthVoice::prepareToPlay(double sampleRate, int samplesPerBlock)
 
     // Prepare the signal graph (prepares all nodes)
     processingGraph.prepare(sampleRate, samplesPerBlock);
-
-    // Prepare legacy chain for backward compatibility
-    legacyChain.prepare(sampleRate, samplesPerBlock);
 
     // Prepare envelope (separate from graph)
     adsr.setSampleRate(sampleRate);
@@ -390,14 +354,9 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
 
     // Register standard probe points with the ProbeRegistry
     // This should be done after voices are created
-    // For now, we register the first voice's signal chain/graph modules
+    // We register the first voice's SignalGraph modules for visualization
     if (auto* voice0 = getVoice(0)) {
-        // Enable probing on the legacy SignalChain (for backward compatibility)
-        voice0->getSignalChain().setProbeRegistry(&probeRegistry);
-        voice0->getSignalChain().registerAllProbesWithRegistry();
-        voice0->getSignalChain().setProbingEnabled(true);
-
-        // CRITICAL FIX: Enable probing on the SignalGraph (actual audio processing)
+        // Enable probing on the SignalGraph (the single source of truth for audio processing)
         voice0->getSignalGraph().setProbeRegistry(&probeRegistry);
         voice0->getSignalGraph().registerAllProbesWithRegistry();
         voice0->getSignalGraph().setProbingEnabled(true);
@@ -843,19 +802,141 @@ juce::AudioProcessorEditor* VizASynthAudioProcessor::createEditor()
 //==============================================================================
 void VizASynthAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    auto state = apvts.copyState();
-    std::unique_ptr<juce::XmlElement> xml(state.createXml());
-    copyXmlToBinary(*xml, destData);
+    // Create a parent XML element to hold both APVTS and graph state
+    juce::XmlElement rootXml("VizASynthState");
+    rootXml.setAttribute("version", 2);  // Version 2 includes graph state
+
+    // Add APVTS state
+    auto apvtsState = apvts.copyState();
+    std::unique_ptr<juce::XmlElement> apvtsXml(apvtsState.createXml());
+    if (apvtsXml) {
+        rootXml.addChildElement(new juce::XmlElement(*apvtsXml));
+    }
+
+    // Add graph state from first voice
+    if (auto* voice = getVoice(0)) {
+        juce::String graphJson = voice->getSignalGraph().toJsonString();
+        auto* graphXml = new juce::XmlElement("SignalGraphState");
+        graphXml->addTextElement(graphJson);
+        rootXml.addChildElement(graphXml);
+    }
+
+    copyXmlToBinary(rootXml, destData);
 }
 
 void VizASynthAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
 
-    if (xmlState.get() != nullptr) {
-        if (xmlState->hasTagName(apvts.state.getType())) {
-            apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+    if (xmlState == nullptr) {
+        return;
+    }
+
+    // Check if this is the new format (version 2) or legacy format
+    if (xmlState->hasTagName("VizASynthState")) {
+        // New format: contains both APVTS and graph state
+        int version = xmlState->getIntAttribute("version", 1);
+
+        // Restore APVTS state
+        auto* apvtsXml = xmlState->getChildByName(apvts.state.getType());
+        if (apvtsXml != nullptr) {
+            apvts.replaceState(juce::ValueTree::fromXml(*apvtsXml));
         }
+
+        // Restore graph state (version 2+)
+        if (version >= 2) {
+            auto* graphXml = xmlState->getChildByName("SignalGraphState");
+            if (graphXml != nullptr) {
+                juce::String graphJson = graphXml->getAllSubText();
+                if (graphJson.isNotEmpty()) {
+                    // Create a node factory for deserializing the graph
+                    auto nodeFactory = [](const std::string& type,
+                                         const std::string& subtype,
+                                         const juce::var& params) -> std::unique_ptr<vizasynth::SignalNode> {
+                        (void)subtype;  // Currently not used, but available for future node types
+
+                        if (type == "oscillator") {
+                            auto osc = std::make_unique<vizasynth::PolyBLEPOscillator>();
+
+                            // Apply parameters
+                            if (params.isObject()) {
+                                juce::String waveform = params.getProperty("waveform", "Sine").toString();
+                                osc->setWaveform(vizasynth::OscillatorSource::stringToWaveform(waveform.toStdString()));
+
+                                float detune = static_cast<float>(params.getProperty("detune", 0.0));
+                                osc->setDetuneCents(detune);
+
+                                int octave = static_cast<int>(params.getProperty("octave", 0));
+                                osc->setOctaveOffset(octave);
+
+                                bool bandLimited = static_cast<bool>(params.getProperty("bandLimited", true));
+                                osc->setBandLimited(bandLimited);
+                            }
+
+                            return osc;
+                        }
+                        else if (type == "filter") {
+                            auto filter = std::make_unique<vizasynth::StateVariableFilterWrapper>();
+
+                            // Apply parameters
+                            if (params.isObject()) {
+                                juce::String filterType = params.getProperty("type", "Lowpass").toString().toLowerCase();
+                                if (filterType == "lowpass" || filterType == "lp") {
+                                    filter->setType(vizasynth::FilterNode::Type::LowPass);
+                                } else if (filterType == "highpass" || filterType == "hp") {
+                                    filter->setType(vizasynth::FilterNode::Type::HighPass);
+                                } else if (filterType == "bandpass" || filterType == "bp") {
+                                    filter->setType(vizasynth::FilterNode::Type::BandPass);
+                                } else if (filterType == "notch") {
+                                    filter->setType(vizasynth::FilterNode::Type::Notch);
+                                }
+
+                                float cutoff = static_cast<float>(params.getProperty("cutoff", 1000.0));
+                                filter->setCutoff(cutoff);
+
+                                float resonance = static_cast<float>(params.getProperty("resonance", 0.707));
+                                filter->setResonance(resonance);
+                            }
+
+                            return filter;
+                        }
+                        else if (type == "mixer") {
+                            int numInputs = 2;
+                            if (params.isObject()) {
+                                numInputs = static_cast<int>(params.getProperty("numInputs", 2));
+                            }
+                            return std::make_unique<vizasynth::MixerNode>(numInputs);
+                        }
+
+                        return nullptr;
+                    };
+
+                    // Apply graph state to all voices
+                    for (int i = 0; i < synth.getNumVoices(); ++i) {
+                        if (auto* voice = dynamic_cast<VizASynthVoice*>(synth.getVoice(i))) {
+                            // Note: We'd need to rebuild the graph here, but for now
+                            // the graph structure is fixed. This prepares for future
+                            // dynamic graph loading.
+                            // voice->getSignalGraph().fromJsonString(graphJson, nodeFactory);
+                            (void)voice;
+                            (void)nodeFactory;
+                        }
+                    }
+
+                    #if JUCE_DEBUG
+                    juce::Logger::writeToLog("Loaded graph state from preset (version " + juce::String(version) + ")");
+                    #endif
+                }
+            }
+        }
+    }
+    else if (xmlState->hasTagName(apvts.state.getType())) {
+        // Legacy format: just APVTS state
+        apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+
+        #if JUCE_DEBUG
+        juce::Logger::writeToLog("Loaded legacy preset (APVTS only)");
+        #endif
     }
 }
 

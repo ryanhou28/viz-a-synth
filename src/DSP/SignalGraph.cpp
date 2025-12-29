@@ -1,5 +1,7 @@
 #include "SignalGraph.h"
 #include "../Visualization/ProbeRegistry.h"
+#include "Oscillators/OscillatorSource.h"
+#include "Filters/FilterNode.h"
 #include <algorithm>
 #include <queue>
 #include <set>
@@ -740,6 +742,274 @@ void MixerNode::prepare(double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
     currentBlockSize = samplesPerBlock;
+}
+
+//=============================================================================
+// SignalGraph - Node Position and Visibility
+//=============================================================================
+
+void SignalGraph::setNodePosition(const NodeId& id, float x, float y)
+{
+    auto* graphNode = getGraphNode(id);
+    if (graphNode) {
+        graphNode->position.x = x;
+        graphNode->position.y = y;
+    }
+}
+
+SignalGraph::NodePosition SignalGraph::getNodePosition(const NodeId& id) const
+{
+    const auto* graphNode = getGraphNode(id);
+    if (graphNode) {
+        return graphNode->position;
+    }
+    return NodePosition();
+}
+
+void SignalGraph::setNodeProbeVisible(const NodeId& id, bool visible)
+{
+    auto* graphNode = getGraphNode(id);
+    if (graphNode) {
+        graphNode->probeVisible = visible;
+    }
+}
+
+bool SignalGraph::isNodeProbeVisible(const NodeId& id) const
+{
+    const auto* graphNode = getGraphNode(id);
+    if (graphNode) {
+        return graphNode->probeVisible;
+    }
+    return true;  // Default to visible
+}
+
+std::vector<SignalGraph::NodeId> SignalGraph::getVisibleProbeNodeIds() const
+{
+    std::vector<NodeId> visibleIds;
+    for (const auto& [id, graphNode] : nodes) {
+        if (graphNode.probeVisible) {
+            visibleIds.push_back(id);
+        }
+    }
+    return visibleIds;
+}
+
+//=============================================================================
+// SignalGraph - Serialization
+//=============================================================================
+
+juce::var SignalGraph::toJson() const
+{
+    auto* obj = new juce::DynamicObject();
+
+    // Graph metadata
+    obj->setProperty("name", juce::String(graphName));
+    obj->setProperty("outputNode", juce::String(outputNodeId));
+    obj->setProperty("inputNode", juce::String(inputNodeId));
+
+    // Serialize nodes
+    juce::Array<juce::var> nodesArray;
+    for (const auto& [id, graphNode] : nodes) {
+        auto* nodeObj = new juce::DynamicObject();
+        nodeObj->setProperty("id", juce::String(id));
+
+        // Determine node type and subtype
+        std::string nodeType = "unknown";
+        std::string nodeSubtype = "";
+
+        if (graphNode.node) {
+            std::string nodeName = graphNode.node->getName();
+
+            // Detect oscillator
+            if (dynamic_cast<const OscillatorSource*>(graphNode.node.get())) {
+                nodeType = "oscillator";
+                if (nodeName.find("PolyBLEP") != std::string::npos) {
+                    nodeSubtype = "polyblep";
+                }
+            }
+            // Detect filter
+            else if (dynamic_cast<const FilterNode*>(graphNode.node.get())) {
+                nodeType = "filter";
+                if (nodeName.find("State Variable") != std::string::npos ||
+                    nodeName.find("SVF") != std::string::npos ||
+                    nodeName.find("TPT") != std::string::npos) {
+                    nodeSubtype = "svf";
+                }
+            }
+            // Detect mixer
+            else if (nodeName == "Mixer") {
+                nodeType = "mixer";
+            }
+        }
+
+        nodeObj->setProperty("type", juce::String(nodeType));
+        nodeObj->setProperty("subtype", juce::String(nodeSubtype));
+        nodeObj->setProperty("numInputs", graphNode.numInputs);
+
+        // Position
+        auto* posObj = new juce::DynamicObject();
+        posObj->setProperty("x", graphNode.position.x);
+        posObj->setProperty("y", graphNode.position.y);
+        nodeObj->setProperty("position", juce::var(posObj));
+
+        // Probe visibility
+        nodeObj->setProperty("probeVisible", graphNode.probeVisible);
+
+        // Node-specific parameters
+        auto* paramsObj = new juce::DynamicObject();
+
+        if (auto* osc = dynamic_cast<const OscillatorSource*>(graphNode.node.get())) {
+            paramsObj->setProperty("waveform", juce::String(OscillatorSource::waveformToString(osc->getWaveform())));
+            paramsObj->setProperty("detune", osc->getDetuneCents());
+            paramsObj->setProperty("octave", osc->getOctaveOffset());
+            paramsObj->setProperty("bandLimited", osc->isBandLimited());
+        }
+        else if (auto* filter = dynamic_cast<const FilterNode*>(graphNode.node.get())) {
+            paramsObj->setProperty("type", juce::String(FilterNode::typeToString(filter->getType())));
+            paramsObj->setProperty("cutoff", filter->getCutoff());
+            paramsObj->setProperty("resonance", filter->getResonance());
+        }
+        else if (auto* mixer = dynamic_cast<const MixerNode*>(graphNode.node.get())) {
+            paramsObj->setProperty("numInputs", mixer->getNumInputs());
+            // Could also serialize individual input gains here
+        }
+
+        nodeObj->setProperty("params", juce::var(paramsObj));
+
+        nodesArray.add(juce::var(nodeObj));
+    }
+    obj->setProperty("nodes", nodesArray);
+
+    // Serialize connections
+    juce::Array<juce::var> connectionsArray;
+    auto connections = getConnections();
+    for (const auto& conn : connections) {
+        auto* connObj = new juce::DynamicObject();
+        connObj->setProperty("source", juce::String(conn.sourceNode));
+        connObj->setProperty("dest", juce::String(conn.destNode));
+        connObj->setProperty("destInput", conn.destInputIndex);
+        connectionsArray.add(juce::var(connObj));
+    }
+    obj->setProperty("connections", connectionsArray);
+
+    return juce::var(obj);
+}
+
+juce::String SignalGraph::toJsonString() const
+{
+    juce::var json = toJson();
+    return juce::JSON::toString(json, true);  // true = formatted output
+}
+
+bool SignalGraph::saveToFile(const juce::File& file) const
+{
+    juce::String jsonString = toJsonString();
+    return file.replaceWithText(jsonString);
+}
+
+bool SignalGraph::fromJson(const juce::var& json, NodeFactory nodeFactory)
+{
+    if (!json.isObject()) {
+        return false;
+    }
+
+    // Clear existing graph
+    clear();
+
+    // Load metadata
+    graphName = json.getProperty("name", "SignalGraph").toString().toStdString();
+    juce::String outputNodeStr = json.getProperty("outputNode", "").toString();
+    juce::String inputNodeStr = json.getProperty("inputNode", "").toString();
+
+    // Load nodes
+    juce::var nodesVar = json.getProperty("nodes", juce::var());
+    if (nodesVar.isArray()) {
+        for (int i = 0; i < nodesVar.size(); ++i) {
+            juce::var nodeVar = nodesVar[i];
+            if (!nodeVar.isObject()) continue;
+
+            juce::String id = nodeVar.getProperty("id", "").toString();
+            juce::String type = nodeVar.getProperty("type", "").toString();
+            juce::String subtype = nodeVar.getProperty("subtype", "").toString();
+            int numInputs = static_cast<int>(nodeVar.getProperty("numInputs", 1));
+
+            // Get parameters
+            juce::var params = nodeVar.getProperty("params", juce::var());
+
+            // Create node using factory
+            auto node = nodeFactory(type.toStdString(), subtype.toStdString(), params);
+            if (!node) {
+                #if JUCE_DEBUG
+                juce::Logger::writeToLog("SignalGraph::fromJson - Failed to create node: " + id + " of type: " + type);
+                #endif
+                continue;
+            }
+
+            // Add node to graph
+            addNode(std::move(node), id.toStdString(), numInputs);
+
+            // Set position
+            juce::var posVar = nodeVar.getProperty("position", juce::var());
+            if (posVar.isObject()) {
+                float x = static_cast<float>(posVar.getProperty("x", 0.0));
+                float y = static_cast<float>(posVar.getProperty("y", 0.0));
+                setNodePosition(id.toStdString(), x, y);
+            }
+
+            // Set probe visibility
+            bool probeVisible = static_cast<bool>(nodeVar.getProperty("probeVisible", true));
+            setNodeProbeVisible(id.toStdString(), probeVisible);
+        }
+    }
+
+    // Load connections
+    juce::var connectionsVar = json.getProperty("connections", juce::var());
+    if (connectionsVar.isArray()) {
+        for (int i = 0; i < connectionsVar.size(); ++i) {
+            juce::var connVar = connectionsVar[i];
+            if (!connVar.isObject()) continue;
+
+            juce::String source = connVar.getProperty("source", "").toString();
+            juce::String dest = connVar.getProperty("dest", "").toString();
+            int destInput = static_cast<int>(connVar.getProperty("destInput", 0));
+
+            if (!source.isEmpty() && !dest.isEmpty()) {
+                connect(source.toStdString(), dest.toStdString(), destInput);
+            }
+        }
+    }
+
+    // Set output and input nodes
+    if (!outputNodeStr.isEmpty()) {
+        setOutputNode(outputNodeStr.toStdString());
+    }
+    if (!inputNodeStr.isEmpty()) {
+        setInputNode(inputNodeStr.toStdString());
+    }
+
+    // Notify listeners of major structural change
+    notifyGraphStructureChanged();
+
+    return true;
+}
+
+bool SignalGraph::fromJsonString(const juce::String& jsonString, NodeFactory nodeFactory)
+{
+    juce::var json = juce::JSON::parse(jsonString);
+    if (json.isVoid()) {
+        return false;
+    }
+    return fromJson(json, nodeFactory);
+}
+
+bool SignalGraph::loadFromFile(const juce::File& file, NodeFactory nodeFactory)
+{
+    if (!file.existsAsFile()) {
+        return false;
+    }
+
+    juce::String jsonString = file.loadFileAsString();
+    return fromJsonString(jsonString, nodeFactory);
 }
 
 } // namespace vizasynth

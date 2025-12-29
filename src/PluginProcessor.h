@@ -6,7 +6,6 @@
 #include "Visualization/ProbeRegistry.h"
 #include "DSP/Oscillators/PolyBLEPOscillator.h"
 #include "DSP/Filters/StateVariableFilterWrapper.h"
-#include "DSP/SignalChain.h"
 #include "Core/ChainConfiguration.h"
 #include "DSP/SignalGraph.h"
 #include "Core/ChainModificationManager.h"
@@ -25,11 +24,15 @@
  * parallel branches (multiple oscillators, filters, etc.) while maintaining
  * the educational interface.
  *
+ * The SignalGraph is the single source of truth for audio processing.
+ * All probing and visualization is done through the graph's probe system.
+ *
  * Graph configuration can be:
  *   1. Default (OSC->FILTER) - VizASynthVoice()
  *   2. From ChainConfiguration - VizASynthVoice(config)
  *   3. From JSON file - loadChainFromFile(path)
- *   4. Runtime modification via ChainEditor
+ *   4. From saved graph state - via SignalGraph::fromJson()
+ *   5. Runtime modification via ChainEditor
  */
 class VizASynthVoice : public juce::SynthesiserVoice
 {
@@ -76,13 +79,8 @@ public:
     vizasynth::SignalGraph& getSignalGraph() { return processingGraph; }
     const vizasynth::SignalGraph& getSignalGraph() const { return processingGraph; }
 
-    // Legacy: kept for backward compatibility with existing visualizations
-    vizasynth::SignalChain& getSignalChain() { return legacyChain; }
-    const vizasynth::SignalChain& getSignalChain() const { return legacyChain; }
-
 private:
     void initializeDefaultGraph();
-    void initializeDefaultChain();  // Legacy: for backward compatibility
     void applyEnvelopeConfig(const vizasynth::EnvelopeConfig& envConfig);
 
     // Chain configuration (stores the current config for serialization/inspection)
@@ -90,9 +88,6 @@ private:
 
     // Signal graph container (OSC -> FILTER with support for parallel branches)
     vizasynth::SignalGraph processingGraph;
-
-    // Legacy signal chain (kept for backward compatibility during migration)
-    vizasynth::SignalChain legacyChain;
 
     // Direct pointers to graph modules for parameter access
     // These are owned by processingGraph, we just keep pointers for convenience

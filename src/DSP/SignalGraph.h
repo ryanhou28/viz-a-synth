@@ -3,6 +3,7 @@
 #include "../Core/SignalNode.h"
 #include "../Visualization/ProbeBuffer.h"
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_core/juce_core.h>
 #include <memory>
 #include <vector>
 #include <string>
@@ -111,6 +112,17 @@ public:
     };
 
     /**
+     * NodePosition stores the UI position for a node (used by ChainEditor)
+     */
+    struct NodePosition {
+        float x = 0.0f;
+        float y = 0.0f;
+
+        NodePosition() = default;
+        NodePosition(float x_, float y_) : x(x_), y(y_) {}
+    };
+
+    /**
      * GraphNode wraps a SignalNode with routing metadata
      */
     struct GraphNode {
@@ -122,6 +134,10 @@ public:
         std::vector<NodeId> inputs;      // Nodes feeding into this one
         std::vector<NodeId> outputs;     // Nodes this one feeds
         int numInputs = 1;                // Number of inputs this node accepts
+
+        // UI state
+        NodePosition position;            // Position in ChainEditor
+        bool probeVisible = true;         // Whether probe point is visible in UI
 
         // Processing state
         float lastOutput = 0.0f;
@@ -297,6 +313,99 @@ public:
 
     std::string getDescription() const override;
     std::string getProcessingType() const override { return "Signal Graph"; }
+
+    //=========================================================================
+    // Node Position and Visibility (for UI/ChainEditor)
+    //=========================================================================
+
+    /**
+     * Set the UI position for a node.
+     * Used by ChainEditor to persist node layout.
+     */
+    void setNodePosition(const NodeId& id, float x, float y);
+    NodePosition getNodePosition(const NodeId& id) const;
+
+    /**
+     * Set whether a node's probe point is visible in the main UI.
+     * Hidden probes don't appear in the probe dropdown.
+     */
+    void setNodeProbeVisible(const NodeId& id, bool visible);
+    bool isNodeProbeVisible(const NodeId& id) const;
+
+    /**
+     * Get all visible probe node IDs (for populating UI dropdowns).
+     */
+    std::vector<NodeId> getVisibleProbeNodeIds() const;
+
+    //=========================================================================
+    // Serialization
+    //=========================================================================
+
+    /**
+     * Serialize the graph structure to JSON.
+     * Includes nodes, connections, positions, and parameters.
+     * Does NOT include actual node processing state (oscillator phase, etc.)
+     *
+     * JSON Format:
+     * {
+     *   "name": "GraphName",
+     *   "outputNode": "filter1",
+     *   "inputNode": "",
+     *   "nodes": [
+     *     {
+     *       "id": "osc1",
+     *       "type": "oscillator",
+     *       "subtype": "polyblep",
+     *       "numInputs": 1,
+     *       "position": {"x": 100, "y": 200},
+     *       "probeVisible": true,
+     *       "params": {"waveform": "sine", "detune": 0, "octave": 0}
+     *     },
+     *     ...
+     *   ],
+     *   "connections": [
+     *     {"source": "osc1", "dest": "filter1", "destInput": 0},
+     *     ...
+     *   ]
+     * }
+     */
+    juce::var toJson() const;
+
+    /**
+     * Serialize to JSON string.
+     */
+    juce::String toJsonString() const;
+
+    /**
+     * Save graph to file.
+     */
+    bool saveToFile(const juce::File& file) const;
+
+    /**
+     * Load graph structure from JSON.
+     * Clears existing nodes and rebuilds from JSON.
+     * Requires a node factory to create nodes from type strings.
+     *
+     * @param json The parsed JSON object
+     * @param nodeFactory Function to create nodes: (type, subtype, params) -> unique_ptr<SignalNode>
+     * @return true if loading succeeded
+     */
+    using NodeFactory = std::function<std::unique_ptr<SignalNode>(
+        const std::string& type,
+        const std::string& subtype,
+        const juce::var& params)>;
+
+    bool fromJson(const juce::var& json, NodeFactory nodeFactory);
+
+    /**
+     * Load from JSON string.
+     */
+    bool fromJsonString(const juce::String& jsonString, NodeFactory nodeFactory);
+
+    /**
+     * Load from file.
+     */
+    bool loadFromFile(const juce::File& file, NodeFactory nodeFactory);
 
     //=========================================================================
     // Advanced Features
