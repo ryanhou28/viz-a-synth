@@ -229,6 +229,23 @@ public:
      */
     static juce::Colour getDefaultColor(const std::string& id);
 
+    /**
+     * Push silence (zeros) to all registered probe buffers.
+     * Call this when no audio is being generated (e.g., no notes active)
+     * to ensure visualizations show silence instead of stale data.
+     *
+     * @param numSamples Number of zero samples to push to each buffer
+     */
+    void pushSilenceToAllProbes(int numSamples);
+
+    /**
+     * Push silence (zeros) to the active probe buffer only.
+     * More efficient than pushSilenceToAllProbes when only one probe is displayed.
+     *
+     * @param numSamples Number of zero samples to push
+     */
+    void pushSilenceToActiveProbe(int numSamples);
+
 private:
     mutable std::mutex mutex;  // Thread-safety for registration/querying
     std::map<std::string, ProbeInfo> probes;

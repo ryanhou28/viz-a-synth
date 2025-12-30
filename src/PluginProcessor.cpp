@@ -773,7 +773,8 @@ void VizASynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // Also fill single voice probe buffer when in Mix mode or when no voices are active
     // This ensures visualizations go to zero during silence
     VoiceMode voiceMode = probeManager.getVoiceMode();
-    if (voiceMode == VoiceMode::Mix || synth.getNumVoices() == 0 || !isAnyNoteActive())
+    bool noNotesActive = !isAnyNoteActive();
+    if (voiceMode == VoiceMode::Mix || synth.getNumVoices() == 0 || noNotesActive)
     {
         // In Mix mode or during silence, push the mixed output to single voice buffer too
         // This makes single-voice visualizations show the mix when appropriate
@@ -781,6 +782,13 @@ void VizASynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
         {
             probeManager.getProbeBuffer().push(channelData[i]);
         }
+    }
+
+    // Bug 8.11 Fix: Push silence to per-node probe buffers when no notes are active
+    // This ensures oscillator/filter probes show silence instead of stale waveform data
+    if (noNotesActive)
+    {
+        probeRegistry.pushSilenceToActiveProbe(numSamples);
     }
 }
 

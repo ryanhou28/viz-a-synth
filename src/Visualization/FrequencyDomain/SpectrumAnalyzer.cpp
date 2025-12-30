@@ -1,5 +1,6 @@
 #include "SpectrumAnalyzer.h"
 #include "../../DSP/Oscillators/PolyBLEPOscillator.h"
+#include "../ProbeRegistry.h"
 #include <cmath>
 
 namespace vizasynth {
@@ -609,6 +610,15 @@ void SpectrumAnalyzer::processFFT()
 //==============================================================================
 ProbeBuffer& SpectrumAnalyzer::getActiveBuffer()
 {
+    // Bug 8.10 Fix: Use ProbeRegistry's active probe buffer if available
+    // This ensures we show the signal at the selected probe point, not just the final output
+    if (auto* registry = probeManager.getProbeRegistry()) {
+        if (auto* activeBuffer = registry->getActiveProbeBuffer()) {
+            return *activeBuffer;
+        }
+    }
+
+    // Fall back to legacy behavior: use mix buffer in Mix mode for Output probe point
     if (probeManager.getVoiceMode() == VoiceMode::Mix &&
         probeManager.getActiveProbe() == ProbePoint::Output) {
         return probeManager.getMixProbeBuffer();

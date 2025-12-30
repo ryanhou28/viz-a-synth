@@ -1,5 +1,6 @@
 #include "Oscilloscope.h"
 #include "../../Core/Configuration.h"
+#include "../ProbeRegistry.h"
 
 namespace vizasynth {
 
@@ -304,7 +305,15 @@ void Oscilloscope::timerCallback()
 //==============================================================================
 ProbeBuffer& Oscilloscope::getActiveBuffer()
 {
-    // For Output probe point, use mix buffer in Mix mode
+    // Bug 8.10 Fix: Use ProbeRegistry's active probe buffer if available
+    // This ensures we show the signal at the selected probe point, not just the final output
+    if (auto* registry = probeManager.getProbeRegistry()) {
+        if (auto* activeBuffer = registry->getActiveProbeBuffer()) {
+            return *activeBuffer;
+        }
+    }
+
+    // Fall back to legacy behavior: use mix buffer in Mix mode for Output probe point
     if (probeManager.getVoiceMode() == VoiceMode::Mix &&
         probeManager.getActiveProbe() == ProbePoint::Output) {
         return probeManager.getMixProbeBuffer();

@@ -125,8 +125,16 @@ bool ProbeRegistry::setActiveProbe(const std::string& id)
     }
 
     // Check if the probe exists
-    if (probes.find(id) == probes.end())
+    auto it = probes.find(id);
+    if (it == probes.end())
         return false;
+
+    // Clear the new probe's buffer to avoid flashing stale waveform data
+    // This fixes bug where switching probes during silence shows old waveform briefly
+    if (it->second.buffer != nullptr)
+    {
+        it->second.buffer->clear();
+    }
 
     activeProbeId = id;
 
@@ -179,6 +187,39 @@ juce::Colour ProbeRegistry::getDefaultColor(const std::string& id)
         return juce::Colour(0xffffd93d);  // Yellow
     else
         return juce::Colour(0xffe0e0e0);  // Light gray (default)
+}
+
+void ProbeRegistry::pushSilenceToAllProbes(int numSamples)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    for (auto& pair : probes)
+    {
+        if (pair.second.buffer != nullptr)
+        {
+            for (int i = 0; i < numSamples; ++i)
+            {
+                pair.second.buffer->push(0.0f);
+            }
+        }
+    }
+}
+
+void ProbeRegistry::pushSilenceToActiveProbe(int numSamples)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    if (activeProbeId.empty())
+        return;
+
+    auto it = probes.find(activeProbeId);
+    if (it == probes.end() || it->second.buffer == nullptr)
+        return;
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        it->second.buffer->push(0.0f);
+    }
 }
 
 void ProbeRegistry::addListener(ProbeRegistryListener* listener)
