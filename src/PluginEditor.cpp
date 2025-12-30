@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "DSP/Oscillators/OscillatorSource.h"
 #include "DSP/Oscillators/PolyBLEPOscillator.h"
+#include "DSP/Filters/FilterNode.h"
 
 //==============================================================================
 VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProcessor& p)
@@ -340,6 +341,11 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
         chainEditor.setVisible(false);
         chainEditorButton.setToggleState(false, juce::dontSendNotification);
         setLeftPanelControlsVisible(true);
+
+        // Bug 8.7 Fix: Refresh main UI panels to sync with ChainEditor changes
+        // The demo graph may have been modified, so update all panel controls
+        updateNodeSelectors();
+
         resized();
     });
 
@@ -1257,10 +1263,10 @@ void VizASynthAudioProcessorEditor::updateNodeSelectors()
 
 void VizASynthAudioProcessorEditor::updateOscillatorPanel()
 {
-    auto* graph = audioProcessor.getVoiceGraph();
-    if (!graph) return;
+    // Use demo graph as source of truth for UI (ChainEditor modifies demoGraph)
+    auto& graph = audioProcessor.getDemoGraph();
 
-    auto* node = graph->getNode(selectedOscillatorId);
+    auto* node = graph.getNode(selectedOscillatorId);
     if (auto* osc = dynamic_cast<vizasynth::OscillatorSource*>(node)) {
         // Update detune/octave sliders to match selected oscillator
         detuneSlider.setValue(osc->getDetuneCents(), juce::dontSendNotification);
@@ -1271,25 +1277,41 @@ void VizASynthAudioProcessorEditor::updateOscillatorPanel()
             int waveformIndex = static_cast<int>(polyblep->getWaveform());
             oscTypeCombo.setSelectedId(waveformIndex + 1, juce::dontSendNotification);
         }
+
+        // Update band-limited toggle
+        bandLimitedToggle.setToggleState(osc->isBandLimited(), juce::dontSendNotification);
     }
 }
 
 void VizASynthAudioProcessorEditor::updateFilterPanel()
 {
-    // Filter panel updates would be similar to oscillator
-    // For now, the filter parameters are connected via APVTS attachments
+    // Use demo graph as source of truth for UI (ChainEditor modifies demoGraph)
+    auto& graph = audioProcessor.getDemoGraph();
+
+    auto* node = graph.getNode(selectedFilterId);
+    if (auto* filter = dynamic_cast<vizasynth::FilterNode*>(node)) {
+        // Update filter controls to match selected filter
+        // Note: These may override APVTS values, but that's correct since
+        // the demo graph is the source of truth after ChainEditor modifications
+        cutoffSlider.setValue(filter->getCutoff(), juce::dontSendNotification);
+        resonanceSlider.setValue(filter->getResonance(), juce::dontSendNotification);
+
+        // Update filter type combo
+        int filterTypeIndex = static_cast<int>(filter->getType());
+        filterTypeCombo.setSelectedId(filterTypeIndex + 1, juce::dontSendNotification);
+    }
 }
 
 void VizASynthAudioProcessorEditor::onOscillatorSelected()
 {
     // Find the node ID corresponding to the selected combo box item
-    auto* graph = audioProcessor.getVoiceGraph();
-    if (!graph) return;
+    // Use demo graph as source of truth for UI
+    auto& graph = audioProcessor.getDemoGraph();
 
     int selectedItem = oscNodeSelector.getSelectedItemIndex();
     int currentIndex = 0;
 
-    graph->forEachNode([this, &currentIndex, selectedItem](const std::string& nodeId, const vizasynth::SignalNode* node) {
+    graph.forEachNode([this, &currentIndex, selectedItem](const std::string& nodeId, const vizasynth::SignalNode* node) {
         if (dynamic_cast<const vizasynth::OscillatorSource*>(node) != nullptr) {
             if (currentIndex == selectedItem) {
                 selectedOscillatorId = nodeId;
@@ -1304,13 +1326,13 @@ void VizASynthAudioProcessorEditor::onOscillatorSelected()
 void VizASynthAudioProcessorEditor::onFilterSelected()
 {
     // Find the node ID corresponding to the selected combo box item
-    auto* graph = audioProcessor.getVoiceGraph();
-    if (!graph) return;
+    // Use demo graph as source of truth for UI
+    auto& graph = audioProcessor.getDemoGraph();
 
     int selectedItem = filterNodeSelector.getSelectedItemIndex();
     int currentIndex = 0;
 
-    graph->forEachNode([this, &currentIndex, selectedItem](const std::string& nodeId, const vizasynth::SignalNode* node) {
+    graph.forEachNode([this, &currentIndex, selectedItem](const std::string& nodeId, const vizasynth::SignalNode* node) {
         if (node->supportsAnalysis() && node->isLTI()) {
             if (currentIndex == selectedItem) {
                 selectedFilterId = nodeId;
