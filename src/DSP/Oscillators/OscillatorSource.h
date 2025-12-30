@@ -179,6 +179,9 @@ public:
     // Therefore they should not accept input connections
     bool canAcceptInput() const override { return false; }
 
+    // Oscillators accept zero inputs (they're sources)
+    int getMaxInputs() const override { return 0; }
+
     std::string getInputRestrictionMessage() const override {
         return "Oscillators are signal sources and cannot accept input connections.";
     }

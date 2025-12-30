@@ -99,6 +99,12 @@ public:
     }
 
     /**
+     * Filters accept exactly one input connection.
+     * Use a Mixer node before the filter to combine multiple signals.
+     */
+    int getMaxInputs() const override { return 1; }
+
+    /**
      * Get the transfer function H(z).
      * Must be implemented by all filter types.
      */

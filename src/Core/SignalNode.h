@@ -185,6 +185,16 @@ public:
     virtual bool canProduceOutput() const { return true; }
 
     /**
+     * Get the maximum number of input connections this node can accept.
+     * Used by SignalGraph to validate connections.
+     *   - Oscillators return 0 (they're sources, not processors)
+     *   - Filters return 1 (single input)
+     *   - Mixers return their configured input count
+     * Default: 1 (single input)
+     */
+    virtual int getMaxInputs() const { return 1; }
+
+    /**
      * Get a user-friendly message explaining why input cannot be accepted.
      * Used for error feedback when invalid connections are attempted.
      */

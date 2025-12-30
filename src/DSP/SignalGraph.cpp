@@ -282,6 +282,18 @@ std::string SignalGraph::getConnectionError(const NodeId& sourceId, const NodeId
         return dest->node->getInputRestrictionMessage();
     }
 
+    // Check destination hasn't reached max inputs
+    int maxInputs = dest->node->getMaxInputs();
+    int currentInputs = static_cast<int>(dest->inputs.size());
+    if (currentInputs >= maxInputs) {
+        std::string nodeName = dest->node->getName();
+        if (maxInputs == 1) {
+            return nodeName + " can only accept one input. Use a Mixer to combine multiple signals.";
+        } else {
+            return nodeName + " has reached its maximum of " + std::to_string(maxInputs) + " inputs.";
+        }
+    }
+
     // Check not already connected
     if (isConnected(sourceId, destId)) {
         return "Nodes are already connected.";

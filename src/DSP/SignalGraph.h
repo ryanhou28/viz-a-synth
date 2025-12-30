@@ -500,6 +500,11 @@ public:
 
     juce::Colour getProbeColor() const override { return juce::Colour(0xff4CAF50); }  // Green
 
+    /**
+     * Mixers can accept multiple input connections (configured at construction).
+     */
+    int getMaxInputs() const override { return numInputs; }
+
 private:
     int numInputs;
     std::vector<float> inputGains;
