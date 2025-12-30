@@ -9,6 +9,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include <vector>
 #include <array>
+#include <functional>
 
 namespace vizasynth {
 
@@ -36,9 +37,14 @@ public:
     static constexpr int MaxHarmonics = 16;  // Display up to 16 harmonics
 
     /**
-     * Constructor with oscillator reference for theoretical harmonic display.
+     * Callback type for getting a pointer to the oscillator.
      */
-    HarmonicView(ProbeManager& probeManager, PolyBLEPOscillator& oscillator);
+    using OscillatorProvider = std::function<PolyBLEPOscillator*()>;
+
+    /**
+     * Constructor with oscillator provider for theoretical harmonic display.
+     */
+    HarmonicView(ProbeManager& probeManager, OscillatorProvider oscillatorProvider);
 
     ~HarmonicView() override = default;
 
@@ -197,7 +203,7 @@ private:
     static float frequencyToCentsDeviation(float frequency);
 
     ProbeManager& probeManager;
-    PolyBLEPOscillator& oscillator;
+    OscillatorProvider getOscillator;
 
     // FFT
     juce::dsp::FFT fft{FFTOrder};

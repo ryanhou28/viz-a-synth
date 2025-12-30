@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Core/Configuration.h"
+#include <iostream>
 
 using namespace vizasynth;
 
@@ -290,6 +291,37 @@ void VizASynthVoice::setADSR(float attack, float decay, float sustain, float rel
     adsr.setParameters(adsrParams);
 }
 
+void VizASynthVoice::updateNodePointers()
+{
+    // Reset pointers to nullptr first (safety: ensures we don't use stale pointers)
+    oscillator = nullptr;
+    filterNode = nullptr;
+
+    // Search the graph for oscillator and filter nodes
+    processingGraph.forEachNode([this](const std::string& nodeId, vizasynth::SignalNode* node) {
+        // Try to find an oscillator (prefer the first one found)
+        if (oscillator == nullptr) {
+            if (auto* osc = dynamic_cast<vizasynth::PolyBLEPOscillator*>(node)) {
+                oscillator = osc;
+            }
+        }
+
+        // Try to find a filter (prefer the first one found)
+        if (filterNode == nullptr) {
+            if (auto* filter = dynamic_cast<vizasynth::StateVariableFilterWrapper*>(node)) {
+                filterNode = filter;
+            }
+        }
+    });
+
+    #if JUCE_DEBUG
+    juce::Logger::writeToLog("VizASynthVoice::updateNodePointers - oscillator: " +
+                             juce::String(oscillator != nullptr ? "found" : "NULL") +
+                             ", filterNode: " +
+                             juce::String(filterNode != nullptr ? "found" : "NULL"));
+    #endif
+}
+
 //==============================================================================
 // VizASynthAudioProcessor Implementation
 //==============================================================================
@@ -370,6 +402,8 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
 
     // Phase 3.5: Initialize demo signal graph and modification manager
     initializeDemoGraph();
+    // demoGraph should NOT have probeRegistry set - it's purely for UI editing.
+    // Voice graphs create their own nodes with probe buffers during sync.
     modificationManager.setGraph(&demoGraph);
     modificationManager.setVoiceStopCallback([this]() {
         synth.allNotesOff(0, true);  // Stop all voices before structural modifications (0 = all channels)
@@ -698,6 +732,11 @@ void VizASynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // Phase 3.5: Process pending graph modifications BEFORE audio processing
     modificationManager.processPendingModifications();
 
+    // Phase 8: Process pending graph synchronization (safely on audio thread)
+    if (pendingGraphSync.exchange(false)) {
+        performGraphSynchronization();
+    }
+
     // Update voice parameters
     updateVoiceParameters();
 
@@ -786,6 +825,145 @@ void VizASynthAudioProcessor::initializeDemoGraph()
     #if JUCE_DEBUG
     juce::Logger::writeToLog("[Phase 3.5] Demo graph initialized with osc1 -> filter1");
     #endif
+}
+
+//==============================================================================
+// Synchronize graph structure from demo graph to all voice graphs
+void VizASynthAudioProcessor::synchronizeGraphToAllVoices()
+{
+    // Serialize the demo graph to JSON and queue for audio thread processing
+    // The demo graph is only modified on the UI thread, so this is safe
+    {
+        juce::ScopedLock lock(syncMutex);
+        pendingGraphJson = demoGraph.toJsonString();
+    }
+
+    // Set flag to trigger synchronization on audio thread
+    pendingGraphSync.store(true);
+}
+
+void VizASynthAudioProcessor::performGraphSynchronization()
+{
+    // Get the cached JSON
+    juce::String graphJson;
+    {
+        juce::ScopedLock lock(syncMutex);
+        graphJson = pendingGraphJson;
+        pendingGraphJson.clear();
+    }
+
+    if (graphJson.isEmpty()) {
+        return;
+    }
+
+    // Create a node factory for deserializing
+    auto nodeFactory = [](const std::string& type,
+                         const std::string& subtype,
+                         const juce::var& params) -> std::unique_ptr<vizasynth::SignalNode> {
+        (void)subtype;
+
+        if (type == "oscillator") {
+            auto osc = std::make_unique<vizasynth::PolyBLEPOscillator>();
+
+            if (params.isObject()) {
+                juce::String waveform = params.getProperty("waveform", "Sine").toString();
+                osc->setWaveform(vizasynth::OscillatorSource::stringToWaveform(waveform.toStdString()));
+
+                float detune = static_cast<float>(params.getProperty("detune", 0.0));
+                osc->setDetuneCents(detune);
+
+                int octave = static_cast<int>(params.getProperty("octave", 0));
+                osc->setOctaveOffset(octave);
+
+                bool bandLimited = static_cast<bool>(params.getProperty("bandLimited", true));
+                osc->setBandLimited(bandLimited);
+            }
+
+            return osc;
+        }
+        else if (type == "filter") {
+            auto filter = std::make_unique<vizasynth::StateVariableFilterWrapper>();
+
+            if (params.isObject()) {
+                juce::String filterType = params.getProperty("type", "Lowpass").toString().toLowerCase();
+                if (filterType == "lowpass" || filterType == "lp") {
+                    filter->setType(vizasynth::FilterNode::Type::LowPass);
+                } else if (filterType == "highpass" || filterType == "hp") {
+                    filter->setType(vizasynth::FilterNode::Type::HighPass);
+                } else if (filterType == "bandpass" || filterType == "bp") {
+                    filter->setType(vizasynth::FilterNode::Type::BandPass);
+                } else if (filterType == "notch") {
+                    filter->setType(vizasynth::FilterNode::Type::Notch);
+                }
+
+                float cutoff = static_cast<float>(params.getProperty("cutoff", 1000.0));
+                filter->setCutoff(cutoff);
+
+                float resonance = static_cast<float>(params.getProperty("resonance", 0.707));
+                filter->setResonance(resonance);
+            }
+
+            return filter;
+        }
+        else if (type == "mixer") {
+            int numInputs = 2;
+            if (params.isObject()) {
+                numInputs = static_cast<int>(params.getProperty("numInputs", 2));
+            }
+            return std::make_unique<vizasynth::MixerNode>(numInputs);
+        }
+
+        return nullptr;
+    };
+
+    // Stop all voices before rebuilding graphs
+    synth.allNotesOff(0, true);
+
+    // Handle probe registration safely across threads.
+    // Voice graphs may have probeRegistry set for visualization. Probe registration
+    // triggers UI callbacks which must happen on the message thread, not the audio thread.
+    // We temporarily disable probe registration during rebuild, then re-register on message thread.
+
+    // Collect voice graphs and clear their registries to prevent audio-thread callbacks
+    std::vector<std::pair<vizasynth::SignalGraph*, vizasynth::ProbeRegistry*>> graphsAndRegistries;
+    for (int i = 0; i < synth.getNumVoices(); ++i) {
+        if (auto* voice = dynamic_cast<VizASynthVoice*>(synth.getVoice(i))) {
+            auto& targetGraph = voice->getSignalGraph();
+            auto* savedRegistry = targetGraph.getProbeRegistry();
+            graphsAndRegistries.push_back({&targetGraph, savedRegistry});
+            targetGraph.setProbeRegistry(nullptr);  // Disable probe callbacks
+        }
+    }
+
+    // Rebuild all graphs (no probe registration will occur)
+    int graphIdx = 0;
+    for (auto& [targetGraph, savedRegistry] : graphsAndRegistries) {
+        (void)savedRegistry;  // Not used in this loop
+        if (targetGraph->fromJsonString(graphJson, nodeFactory)) {
+            targetGraph->prepare(getSampleRate(), getBlockSize());
+
+            // Update voice's node pointers after graph rebuild to prevent dangling pointers
+            if (auto* voice = dynamic_cast<VizASynthVoice*>(synth.getVoice(graphIdx))) {
+                voice->updateNodePointers();
+            }
+        }
+        graphIdx++;
+    }
+
+    // Restore registries to voice graphs
+    for (auto& [targetGraph, savedRegistry] : graphsAndRegistries) {
+        targetGraph->setProbeRegistry(savedRegistry);
+    }
+
+    // Schedule probe registration on message thread for voice 0 (used for visualization)
+    juce::MessageManager::callAsync([this]() {
+        if (auto* voice0 = getVoice(0)) {
+            auto& graph = voice0->getSignalGraph();
+            if (graph.getProbeRegistry()) {
+                graph.registerAllProbesWithRegistry();
+            }
+        }
+    });
 }
 
 //==============================================================================

@@ -5,8 +5,8 @@
 namespace vizasynth {
 
 //==============================================================================
-SpectrumAnalyzer::SpectrumAnalyzer(ProbeManager& pm, PolyBLEPOscillator& osc)
-    : probeManager(pm), oscillator(osc)
+SpectrumAnalyzer::SpectrumAnalyzer(ProbeManager& pm, OscillatorProvider oscProvider)
+    : probeManager(pm), getOscillator(std::move(oscProvider))
 {
     inputBuffer.reserve(FFTSize * 2);
     magnitudeSpectrum.fill(MinDB);
@@ -513,21 +513,26 @@ void SpectrumAnalyzer::timerCallback()
 
     sampleRate = static_cast<float>(probeManager.getSampleRate());
 
+    // Get the current oscillator (may be null if graph was rebuilt without an oscillator)
+    auto* osc = getOscillator();
+
     // Deferred initialization of waveform info (can't be done in constructor
     // because oscillator's vtable might not be ready)
-    if (!waveformInitialized) {
-        updateWaveformInfo();
-        waveformInitialized = true;
-    } else {
-        // Check if waveform changed and update info
-        auto newWaveform = oscillator.getWaveform();
-        if (newWaveform != currentWaveform) {
+    if (osc != nullptr) {
+        if (!waveformInitialized) {
             updateWaveformInfo();
+            waveformInitialized = true;
+        } else {
+            // Check if waveform changed and update info
+            auto newWaveform = osc->getWaveform();
+            if (newWaveform != currentWaveform) {
+                updateWaveformInfo();
+            }
         }
-    }
 
-    // Track band-limiting state for aliasing visualization
-    isBandLimited = oscillator.isBandLimited();
+        // Track band-limiting state for aliasing visualization
+        isBandLimited = osc->isBandLimited();
+    }
 
     // Track fundamental frequency from ProbeManager
     fundamentalFrequency = probeManager.getActiveFrequency();
@@ -1354,9 +1359,12 @@ void SpectrumAnalyzer::drawFoldingToggle(juce::Graphics& g, juce::Rectangle<floa
 
 void SpectrumAnalyzer::updateWaveformInfo()
 {
-    currentWaveform = oscillator.getWaveform();
+    auto* osc = getOscillator();
+    if (osc == nullptr) return;
+
+    currentWaveform = osc->getWaveform();
     waveformName = OscillatorSource::waveformToString(currentWaveform);
-    harmonicDescription = oscillator.getHarmonicDescription();
+    harmonicDescription = osc->getHarmonicDescription();
 }
 
 } // namespace vizasynth

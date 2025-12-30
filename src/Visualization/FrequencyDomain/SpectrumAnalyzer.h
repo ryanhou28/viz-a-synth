@@ -7,6 +7,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include <vector>
 #include <array>
+#include <functional>
 
 namespace vizasynth {
 
@@ -44,9 +45,18 @@ public:
     };
 
     /**
-     * Constructor with oscillator reference for harmonic markers and Fourier series display.
+     * Callback type for getting a reference to the oscillator.
+     * This allows the oscillator to be queried dynamically, supporting
+     * cases where the underlying oscillator may change (e.g., graph rebuild).
      */
-    SpectrumAnalyzer(ProbeManager& probeManager, PolyBLEPOscillator& oscillator);
+    using OscillatorProvider = std::function<PolyBLEPOscillator*()>;
+
+    /**
+     * Constructor with oscillator provider for harmonic markers and Fourier series display.
+     * The provider is called each time the oscillator is needed, allowing the
+     * oscillator reference to remain valid even after graph reconstruction.
+     */
+    SpectrumAnalyzer(ProbeManager& probeManager, OscillatorProvider oscillatorProvider);
     ~SpectrumAnalyzer() override = default;
 
     //=========================================================================
@@ -270,7 +280,7 @@ private:
     ProbeBuffer& getActiveBuffer();
 
     ProbeManager& probeManager;
-    PolyBLEPOscillator& oscillator;
+    OscillatorProvider getOscillator;
 
     // FFT
     juce::dsp::FFT fft{FFTOrder};

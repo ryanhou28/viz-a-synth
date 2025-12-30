@@ -83,23 +83,13 @@ std::string ChainEditor::addNode(const std::string& moduleType, juce::Point<floa
 
     nodeVisuals.push_back(visual);
 
-    // Register probe for this node
-    if (probeRegistry && currentGraph) {
-        auto* graphNode = currentGraph->getNode(nodeId);
-        if (graphNode) {
-            auto* probeBuffer = graphNode->getProbeBuffer();
-            if (probeBuffer) {
-                std::string probeId = nodeId + ".output";
-                std::string displayName = nodeId;
-                std::string processingType = getProcessingType(moduleType);
-                juce::Colour color = visual.color;
-                int orderIndex = static_cast<int>(nodeVisuals.size()) * 10;
+    // Phase 8 Fix: Save initial position to SignalGraph
+    // This ensures newly added nodes keep their positions across rebuilds
+    currentGraph->setNodePosition(nodeId, position.x, position.y);
 
-                probeRegistry->registerProbe(probeId, displayName, processingType,
-                                            probeBuffer, color, orderIndex);
-            }
-        }
-    }
+    // Note: Probe registration is already handled by SignalGraph::addNode()
+    // We don't need to register again here, as it would be a duplicate.
+    // The SignalGraph uses the same ProbeRegistry instance we have.
 
     notifyGraphModified();
     repaint();
@@ -113,13 +103,10 @@ bool ChainEditor::removeNode(const std::string& nodeId)
         return false;
     }
 
-    // Unregister probe BEFORE removing from graph
-    if (probeRegistry) {
-        std::string probeId = nodeId + ".output";
-        probeRegistry->unregisterProbe(probeId);
-    }
+    // SignalGraph::removeNode() handles probe unregistration internally if the
+    // graph has a registry set. No manual unregistration needed here.
 
-    // Remove from graph
+    // Remove from graph (this handles probe unregistration internally)
     auto removed = currentGraph->removeNode(nodeId);
     if (!removed) {
         return false;
@@ -479,13 +466,19 @@ void ChainEditor::mouseUp(const juce::MouseEvent& event)
             connectNodes(dragState.nodeId, targetNode->id);
         }
     } else if (dragState.type == DragState::Type::Node) {
-        // Stop dragging
+        // Stop dragging and save final position to SignalGraph
         auto node = std::find_if(nodeVisuals.begin(), nodeVisuals.end(),
                                   [this](const NodeVisual& n) {
                                       return n.id == dragState.nodeId;
                                   });
         if (node != nodeVisuals.end()) {
             node->isDragging = false;
+
+            // Phase 8 Fix: Save node position to SignalGraph
+            // This ensures positions persist across visual rebuilds
+            if (currentGraph) {
+                currentGraph->setNodePosition(node->id, node->position.x, node->position.y);
+            }
         }
     }
 
@@ -616,17 +609,31 @@ void ChainEditor::rebuildVisualsFromGraph()
         visual.id = id;
         visual.displayName = node->getName();
         visual.type = "unknown";
-        visual.position = juce::Point<float>(static_cast<float>(xPos), static_cast<float>(yPos));
-        visual.bounds = juce::Rectangle<float>(static_cast<float>(xPos), static_cast<float>(yPos), nodeWidth, nodeHeight);
+
+        // Phase 8 Fix: Load position from SignalGraph if available
+        // This preserves user-arranged positions across rebuilds
+        auto savedPos = currentGraph->getNodePosition(id);
+        if (savedPos.x != 0.0f || savedPos.y != 0.0f) {
+            // Use saved position from graph
+            visual.position = juce::Point<float>(savedPos.x, savedPos.y);
+        } else {
+            // No saved position - use default layout
+            visual.position = juce::Point<float>(static_cast<float>(xPos), static_cast<float>(yPos));
+
+            // Also save this default position to the graph for future rebuilds
+            currentGraph->setNodePosition(id, static_cast<float>(xPos), static_cast<float>(yPos));
+
+            xPos += spacing;
+            if (xPos > canvasWidth - 100) {
+                xPos = 100;
+                yPos += spacing;
+            }
+        }
+
+        visual.bounds = juce::Rectangle<float>(visual.position.x, visual.position.y, nodeWidth, nodeHeight);
         visual.color = node->getProbeColor();
 
         nodeVisuals.push_back(visual);
-
-        xPos += spacing;
-        if (xPos > canvasWidth - 100) {
-            xPos = 100;
-            yPos += spacing;
-        }
     }
 
     // Mark the output node

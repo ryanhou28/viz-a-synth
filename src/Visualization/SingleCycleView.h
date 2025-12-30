@@ -20,7 +20,12 @@ namespace vizasynth {
 class SingleCycleView : public juce::Component, public juce::Timer
 {
 public:
-    SingleCycleView(ProbeManager& probeManager, PolyBLEPOscillator& oscillator);
+    /**
+     * Callback type for getting a pointer to the oscillator.
+     */
+    using OscillatorProvider = std::function<PolyBLEPOscillator*()>;
+
+    SingleCycleView(ProbeManager& probeManager, OscillatorProvider oscillatorProvider);
     ~SingleCycleView() override;
 
     void paint(juce::Graphics& g) override;
@@ -71,8 +76,8 @@ private:
 
     ProbeManager& probeManager;
 
-    // Reference to oscillator (for waveform type, not for audio)
-    PolyBLEPOscillator& oscillator;
+    // Callback to get the oscillator (for waveform type, not for audio)
+    OscillatorProvider getOscillator;
 
     // Pre-generated waveform cycle (computed mathematically, not from audio)
     std::vector<float> waveformCycle;

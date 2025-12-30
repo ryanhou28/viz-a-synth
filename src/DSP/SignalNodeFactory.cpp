@@ -1,4 +1,5 @@
 #include "SignalNodeFactory.h"
+#include "SignalGraph.h"  // For MixerNode
 #include <algorithm>
 #include <cctype>
 
@@ -34,6 +35,13 @@ void SignalNodeFactory::ensureDefaultsRegistered()
     registry["filter"] = filterCreator;
     registry["svf"] = filterCreator;
     registry["statevarfilter"] = filterCreator;
+
+    // Register mixer type
+    auto mixerCreator = []() -> std::unique_ptr<SignalNode> {
+        return std::make_unique<MixerNode>(2);  // Default 2 inputs
+    };
+    registry["mixer"] = mixerCreator;
+    registry["mix"] = mixerCreator;
 }
 
 std::unique_ptr<SignalNode> SignalNodeFactory::create(const std::string& type)

@@ -79,6 +79,13 @@ public:
     vizasynth::SignalGraph& getSignalGraph() { return processingGraph; }
     const vizasynth::SignalGraph& getSignalGraph() const { return processingGraph; }
 
+    /**
+     * Update internal node pointers after graph reconstruction.
+     * Must be called after the graph is rebuilt via fromJsonString to
+     * re-establish pointers to oscillator and filter nodes.
+     */
+    void updateNodePointers();
+
 private:
     void initializeDefaultGraph();
     void applyEnvelopeConfig(const vizasynth::EnvelopeConfig& envConfig);
@@ -205,7 +212,30 @@ public:
     }
     vizasynth::ChainModificationManager& getModificationManager() { return modificationManager; }
 
+    /**
+     * Queue graph synchronization from voice 0 to all other voices.
+     * Called after ChainEditor makes structural changes.
+     * The actual synchronization happens on the audio thread during processBlock()
+     * to avoid thread safety issues.
+     */
+    void synchronizeGraphToAllVoices();
+
+    /**
+     * Get the number of voices in the synthesizer.
+     */
+    int getNumVoices() const { return synth.getNumVoices(); }
+
 private:
+    /**
+     * Actually perform the graph synchronization (called from audio thread).
+     */
+    void performGraphSynchronization();
+
+    // Flag to indicate pending synchronization (atomic for thread safety)
+    std::atomic<bool> pendingGraphSync{false};
+    // Cached JSON for synchronization (protected by syncMutex)
+    juce::String pendingGraphJson;
+    juce::CriticalSection syncMutex;
     // Filter wrapper for visualization (mirrors voice filter settings)
     vizasynth::StateVariableFilterWrapper filterWrapper;
 

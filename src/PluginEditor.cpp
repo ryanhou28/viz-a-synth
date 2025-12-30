@@ -9,30 +9,32 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
       audioProcessor(p),
       oscilloscope(p.getProbeManager()),
       spectrumAnalyzer(p.getProbeManager(),
-                       [&]() -> vizasynth::PolyBLEPOscillator& {
+                       [&p]() -> vizasynth::PolyBLEPOscillator* {
                            if (auto* voice = p.getVoice(0)) {
-                               return voice->getOscillator();
+                               // getOscillator returns a reference, we need a pointer
+                               // Use address-of on the reference to get the pointer
+                               return &voice->getOscillator();
                            }
-                           throw std::runtime_error("No voices available to provide an oscillator.");
-                       }()),
+                           return nullptr;
+                       }),
       harmonicView(p.getProbeManager(),
-                   [&]() -> vizasynth::PolyBLEPOscillator& {
+                   [&p]() -> vizasynth::PolyBLEPOscillator* {
                        if (auto* voice = p.getVoice(0)) {
-                           return voice->getOscillator();
+                           return &voice->getOscillator();
                        }
-                       throw std::runtime_error("No voices available to provide an oscillator.");
-                   }()),
+                       return nullptr;
+                   }),
       poleZeroPlot(p.getProbeManager(), p.getFilterWrapper()),
       bodePlot(p.getProbeManager(), p.getFilterWrapper()),
       transferFunctionDisplay(p.getProbeManager(), p.getFilterWrapper()),
       impulseResponse(p.getProbeManager(), p.getFilterWrapper()),
       singleCycleView(p.getProbeManager(),
-                      [&]() -> vizasynth::PolyBLEPOscillator& {
+                      [&p]() -> vizasynth::PolyBLEPOscillator* {
                           if (auto* voice = p.getVoice(0)) {
-                              return voice->getOscillator();
+                              return &voice->getOscillator();
                           }
-                          throw std::runtime_error("No voices available to provide an oscillator.");
-                      }()),
+                          return nullptr;
+                      }),
       envelopeVisualizer(p.getAPVTS())
 {
     // Set editor size from configuration
@@ -314,23 +316,23 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     addAndMakeVisible(chainEditorButton);
 
     // Setup chain editor (initially hidden)
-    // Phase 3.5 Option B: Connect to voice graph for full integration
-    if (auto* voiceGraph = audioProcessor.getVoiceGraph()) {
-        chainEditor.setGraph(voiceGraph);
-        chainEditor.setGraphModifiedCallback([this](vizasynth::SignalGraph* graph) {
-            #if JUCE_DEBUG
-            juce::Logger::writeToLog("[Phase 3.5 Full Integration] Voice graph modified via ChainEditor");
-            #endif
-            // Graph modifications will affect audio output!
-            // Modifications are thread-safe via ChainModificationManager
-        });
-    } else {
-        // Fallback to demo graph if voice not available
-        chainEditor.setGraph(&audioProcessor.getDemoGraph());
+    // Phase 8 Fix: Use demo graph for editing to avoid race conditions
+    // The demo graph is only accessed from the UI thread, so it's safe to modify.
+    // Changes are then synchronized to all voice graphs on the audio thread.
+    chainEditor.setGraph(&audioProcessor.getDemoGraph());
+    chainEditor.setGraphModifiedCallback([this](vizasynth::SignalGraph* graph) {
+        (void)graph;
         #if JUCE_DEBUG
-        juce::Logger::writeToLog("[Phase 3.5] Fallback: Using demo graph (voice not ready)");
+        juce::Logger::writeToLog("[Phase 8] Demo graph modified via ChainEditor - queuing sync to all voices");
         #endif
-    }
+
+        // Phase 8 Fix: Synchronize graph changes to all voices
+        // The demo graph is modified on UI thread, then synced to all voice graphs on audio thread
+        audioProcessor.synchronizeGraphToAllVoices();
+
+        // Update node selectors in case nodes were added/removed
+        updateNodeSelectors();
+    });
 
     // Set close callback to hide the chain editor
     chainEditor.setCloseCallback([this]() {
@@ -349,14 +351,14 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
 
     // Wire up SignalGraph to all visualizations that support per-visualization node targeting
     // This enables filter/oscillator selection dropdowns when multiple nodes exist
-    if (auto* voiceGraph = audioProcessor.getVoiceGraph()) {
-        bodePlot.setSignalGraph(voiceGraph);
-        poleZeroPlot.setSignalGraph(voiceGraph);
-        impulseResponse.setSignalGraph(voiceGraph);
-        transferFunctionDisplay.setSignalGraph(voiceGraph);
-        harmonicView.setSignalGraph(voiceGraph);
-        singleCycleView.setSignalGraph(voiceGraph);
-    }
+    // Use demo graph since it's the source of truth for the UI
+    auto& demoGraph = audioProcessor.getDemoGraph();
+    bodePlot.setSignalGraph(&demoGraph);
+    poleZeroPlot.setSignalGraph(&demoGraph);
+    impulseResponse.setSignalGraph(&demoGraph);
+    transferFunctionDisplay.setSignalGraph(&demoGraph);
+    harmonicView.setSignalGraph(&demoGraph);
+    singleCycleView.setSignalGraph(&demoGraph);
 
     // Setup virtual keyboard
     virtualKeyboard.setNoteCallback([this](const juce::MidiMessage& msg) {
@@ -1195,8 +1197,8 @@ void VizASynthAudioProcessorEditor::onGraphStructureChanged()
 
 void VizASynthAudioProcessorEditor::updateNodeSelectors()
 {
-    auto* graph = audioProcessor.getVoiceGraph();
-    if (!graph) return;
+    // Use demo graph since it's the source of truth for the UI
+    auto* graph = &audioProcessor.getDemoGraph();
 
     // Update oscillator selector
     oscNodeSelector.clear(juce::dontSendNotification);

@@ -5,8 +5,8 @@
 namespace vizasynth {
 
 //==============================================================================
-SingleCycleView::SingleCycleView(ProbeManager& pm, PolyBLEPOscillator& osc)
-    : probeManager(pm), oscillator(osc)
+SingleCycleView::SingleCycleView(ProbeManager& pm, OscillatorProvider oscProvider)
+    : probeManager(pm), getOscillator(std::move(oscProvider))
 {
     // Pre-allocate waveform buffer
     waveformCycle.resize(SamplesPerCycle);

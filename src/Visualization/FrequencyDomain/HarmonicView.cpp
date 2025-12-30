@@ -5,8 +5,8 @@
 namespace vizasynth {
 
 //==============================================================================
-HarmonicView::HarmonicView(ProbeManager& pm, PolyBLEPOscillator& osc)
-    : probeManager(pm), oscillator(osc)
+HarmonicView::HarmonicView(ProbeManager& pm, OscillatorProvider oscProvider)
+    : probeManager(pm), getOscillator(std::move(oscProvider))
 {
     inputBuffer.reserve(FFTSize * 2);
     magnitudeSpectrum.fill(MinDB);
@@ -99,12 +99,15 @@ juce::Colour HarmonicView::getProbeColour(ProbePoint probe)
 //==============================================================================
 void HarmonicView::updateTheoreticalHarmonics()
 {
-    currentWaveform = oscillator.getWaveform();
+    auto* osc = getOscillator();
+    if (osc == nullptr) return;
+
+    currentWaveform = osc->getWaveform();
     waveformName = OscillatorSource::waveformToString(currentWaveform);
-    harmonicDescription = oscillator.getHarmonicDescription();
+    harmonicDescription = osc->getHarmonicDescription();
 
     // Get theoretical harmonics from oscillator
-    auto theoretical = oscillator.getTheoreticalHarmonics(MaxHarmonics);
+    auto theoretical = osc->getTheoreticalHarmonics(MaxHarmonics);
 
     // Convert to dB relative to fundamental
     // Find the fundamental magnitude for normalization
@@ -538,14 +541,17 @@ void HarmonicView::timerCallback()
 
     // Deferred initialization of theoretical harmonics (can't be done in constructor
     // because oscillator's vtable might not be ready)
-    if (!theoreticalInitialized) {
-        updateTheoreticalHarmonics();
-        theoreticalInitialized = true;
-    } else {
-        // Check if waveform changed and update theoretical harmonics
-        auto newWaveform = oscillator.getWaveform();
-        if (newWaveform != currentWaveform) {
+    auto* osc = getOscillator();
+    if (osc != nullptr) {
+        if (!theoreticalInitialized) {
             updateTheoreticalHarmonics();
+            theoreticalInitialized = true;
+        } else {
+            // Check if waveform changed and update theoretical harmonics
+            auto newWaveform = osc->getWaveform();
+            if (newWaveform != currentWaveform) {
+                updateTheoreticalHarmonics();
+            }
         }
     }
 
