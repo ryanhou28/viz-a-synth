@@ -153,7 +153,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     // Update probe button states
     updateProbeButtons();
 
-    // Setup oscillator node selector (Phase 2)
+    // Setup oscillator node selector
     oscNodeSelector.addItem("Osc 1", 1);  // Default oscillator
     oscNodeSelector.setSelectedId(1, juce::dontSendNotification);
     oscNodeSelector.onChange = [this]() { onOscillatorSelected(); };
@@ -174,7 +174,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     bandLimitedToggle.setTooltip("Enable band-limited oscillator (PolyBLEP)\nDisable to hear aliasing artifacts");
     addAndMakeVisible(bandLimitedToggle);
 
-    // Setup detune slider (Phase 2.4)
+    // Setup detune slider
     detuneSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     detuneSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
     detuneSlider.setRange(-100.0, 100.0, 1.0);
@@ -196,7 +196,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     detuneLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(detuneLabel);
 
-    // Setup octave slider (Phase 2.4)
+    // Setup octave slider
     octaveSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     octaveSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 35, 20);
     octaveSlider.setRange(-2.0, 2.0, 1.0);
@@ -217,7 +217,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     octaveLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(octaveLabel);
 
-    // Setup filter node selector (Phase 2)
+    // Setup filter node selector
     filterNodeSelector.addItem("Filter 1", 1);  // Default filter
     filterNodeSelector.setSelectedId(1, juce::dontSendNotification);
     filterNodeSelector.onChange = [this]() { onFilterSelected(); };
@@ -317,17 +317,17 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     addAndMakeVisible(chainEditorButton);
 
     // Setup chain editor (initially hidden)
-    // Phase 8 Fix: Use demo graph for editing to avoid race conditions
+    // Use demo graph for editing to avoid race conditions.
     // The demo graph is only accessed from the UI thread, so it's safe to modify.
     // Changes are then synchronized to all voice graphs on the audio thread.
     chainEditor.setGraph(&audioProcessor.getDemoGraph());
     chainEditor.setGraphModifiedCallback([this](vizasynth::SignalGraph* graph) {
         (void)graph;
         #if JUCE_DEBUG
-        juce::Logger::writeToLog("[Phase 8] Demo graph modified via ChainEditor - queuing sync to all voices");
+        juce::Logger::writeToLog("Demo graph modified via ChainEditor - queuing sync to all voices");
         #endif
 
-        // Phase 8 Fix: Synchronize graph changes to all voices
+        // Synchronize graph changes to all voices
         // The demo graph is modified on UI thread, then synced to all voice graphs on audio thread
         audioProcessor.synchronizeGraphToAllVoices();
 
@@ -425,7 +425,7 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     // Apply theme colors to all components
     applyThemeToComponents();
 
-    // Register as SignalGraph listener for node selector updates (Phase 2)
+    // Register as SignalGraph listener for node selector updates
     if (auto* voiceGraph = audioProcessor.getVoiceGraph()) {
         voiceGraph->addListener(this);
     }
@@ -652,7 +652,7 @@ void VizASynthAudioProcessorEditor::resized()
     int oscComboYOffset = config.getLayoutInt("components.oscillatorPanel.comboYOffset", -2);
     int nodeSelectorWidth = config.getLayoutInt("components.oscillatorPanel.nodeSelectorWidth", 65);
 
-    // Node selector at the far left (Phase 2)
+    // Node selector at the far left
     int oscSelectorX = panelX + layout.panelInnerMargin;
     oscNodeSelector.setBounds(oscSelectorX, oscComboY + oscComboYOffset, nodeSelectorWidth, layout.comboHeight);
 
@@ -666,7 +666,7 @@ void VizASynthAudioProcessorEditor::resized()
     int bandLimitedX = oscComboX + 75;
     bandLimitedToggle.setBounds(bandLimitedX, oscComboY + oscComboYOffset, 80, layout.comboHeight);
 
-    // Detune and Octave controls (Phase 2.4) - below waveform row
+    // Detune and Octave controls - below waveform row
     int secondRowYOffset = config.getLayoutInt("components.oscillatorPanel.secondRowYOffset", 35);
     int oscSecondRowY = oscComboY + secondRowYOffset;
     int detuneWidth = config.getLayoutInt("components.oscillatorPanel.detuneSliderWidth", 100);
@@ -684,7 +684,7 @@ void VizASynthAudioProcessorEditor::resized()
     int filterLabelY = filterY + layout.filterLabelYOffset;
     int filterKnobY = filterLabelY + layout.labelHeight + layout.filterKnobYOffset;
 
-    // Filter node selector (Phase 2) - at top of filter section
+    // Filter node selector - at top of filter section
     int filterSelectorY = filterY + config.getLayoutInt("components.filterPanel.nodeSelectorY", 10);
     int filterNodeSelectorWidth = config.getLayoutInt("components.filterPanel.nodeSelectorWidth", 75);
     filterNodeSelector.setBounds(panelX + layout.panelInnerMargin, filterSelectorY, filterNodeSelectorWidth, layout.comboHeight);

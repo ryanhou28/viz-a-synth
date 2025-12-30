@@ -93,8 +93,6 @@ bool VizASynthVoice::loadChainFromConfig(const ChainConfiguration& config)
     chainConfig = config;
 
     // Build the graph from configuration
-    // For now, use default graph structure - configuration-based graph building
-    // will be added in Phase 5.5 (graph serialization)
     initializeDefaultGraph();
 
     // Apply envelope configuration
@@ -400,7 +398,7 @@ VizASynthAudioProcessor::VizASynthAudioProcessor()
                                 juce::Colour(0xffb088f9),  // Purple
                                 1000);  // High order index (appears last)
 
-    // Phase 3.5: Initialize demo signal graph and modification manager
+    // Initialize demo signal graph and modification manager
     initializeDemoGraph();
     // demoGraph should NOT have probeRegistry set - it's purely for UI editing.
     // Voice graphs create their own nodes with probe buffers during sync.
@@ -729,10 +727,10 @@ void VizASynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // Clear output buffer
     buffer.clear();
 
-    // Phase 3.5: Process pending graph modifications BEFORE audio processing
+    // Process pending graph modifications BEFORE audio processing
     modificationManager.processPendingModifications();
 
-    // Phase 8: Process pending graph synchronization (safely on audio thread)
+    // Process pending graph synchronization (safely on audio thread)
     if (pendingGraphSync.exchange(false)) {
         performGraphSynchronization();
     }
@@ -806,7 +804,6 @@ bool VizASynthAudioProcessor::isAnyNoteActive() const
 }
 
 //==============================================================================
-// Phase 3.5: Initialize demo signal graph with sample nodes
 void VizASynthAudioProcessor::initializeDemoGraph()
 {
     // Create a simple demo graph: OSC -> FILTER -> Output
@@ -831,7 +828,7 @@ void VizASynthAudioProcessor::initializeDemoGraph()
     demoGraph.setName("DemoGraph");
 
     #if JUCE_DEBUG
-    juce::Logger::writeToLog("[Phase 3.5] Demo graph initialized with osc1 -> filter1");
+    juce::Logger::writeToLog("Demo graph initialized with osc1 -> filter1");
     #endif
 }
 

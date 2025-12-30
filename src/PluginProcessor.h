@@ -201,7 +201,7 @@ public:
     // This is a shared wrapper that mirrors the voice filter settings
     vizasynth::StateVariableFilterWrapper& getFilterWrapper() { return filterWrapper; }
 
-    // Phase 3.5: Signal chain editing integration
+    // Signal chain editing integration
     vizasynth::SignalGraph& getDemoGraph() { return demoGraph; }
     vizasynth::SignalGraph* getVoiceGraph() {
         // Return the first voice's signal graph for editing
@@ -239,7 +239,7 @@ private:
     // Filter wrapper for visualization (mirrors voice filter settings)
     vizasynth::StateVariableFilterWrapper filterWrapper;
 
-    // Phase 3.5: Demo signal graph for ChainEditor testing
+    // Demo signal graph for ChainEditor testing
     vizasynth::SignalGraph demoGraph;
     vizasynth::ChainModificationManager modificationManager;
     //==============================================================================
@@ -263,7 +263,7 @@ private:
     void updateVoiceParameters();
     void applyChainConfigToAPVTS(const vizasynth::ChainConfiguration& config);
     bool isAnyNoteActive() const;
-    void initializeDemoGraph();  // Phase 3.5: Initialize demo graph with sample nodes
+    void initializeDemoGraph();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VizASynthAudioProcessor)
 };

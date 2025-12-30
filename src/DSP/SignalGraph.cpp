@@ -754,6 +754,7 @@ void SignalGraph::setNodePosition(const NodeId& id, float x, float y)
     if (graphNode) {
         graphNode->position.x = x;
         graphNode->position.y = y;
+        graphNode->position.isSet = true;
     }
 }
 
@@ -850,6 +851,7 @@ juce::var SignalGraph::toJson() const
         auto* posObj = new juce::DynamicObject();
         posObj->setProperty("x", graphNode.position.x);
         posObj->setProperty("y", graphNode.position.y);
+        posObj->setProperty("isSet", graphNode.position.isSet);
         nodeObj->setProperty("position", juce::var(posObj));
 
         // Probe visibility
@@ -953,7 +955,10 @@ bool SignalGraph::fromJson(const juce::var& json, NodeFactory nodeFactory)
             if (posVar.isObject()) {
                 float x = static_cast<float>(posVar.getProperty("x", 0.0));
                 float y = static_cast<float>(posVar.getProperty("y", 0.0));
-                setNodePosition(id.toStdString(), x, y);
+                bool isSet = static_cast<bool>(posVar.getProperty("isSet", true));  // Default to true for backwards compatibility
+                if (isSet) {
+                    setNodePosition(id.toStdString(), x, y);
+                }
             }
 
             // Set probe visibility

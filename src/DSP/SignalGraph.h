@@ -117,9 +117,10 @@ public:
     struct NodePosition {
         float x = 0.0f;
         float y = 0.0f;
+        bool isSet = false;  // True if position was explicitly set (vs default)
 
         NodePosition() = default;
-        NodePosition(float x_, float y_) : x(x_), y(y_) {}
+        NodePosition(float x_, float y_) : x(x_), y(y_), isSet(true) {}
     };
 
     /**

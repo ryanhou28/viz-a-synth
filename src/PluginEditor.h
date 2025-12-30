@@ -117,7 +117,7 @@ private:
     juce::Slider timeWindowSlider;
     juce::Label timeWindowLabel;
 
-    // Node selectors (Phase 2: select which node to control)
+    // Node selectors (select which node to control)
     juce::ComboBox oscNodeSelector;
     juce::ComboBox filterNodeSelector;
     std::string selectedOscillatorId = "osc1";  // Currently selected oscillator

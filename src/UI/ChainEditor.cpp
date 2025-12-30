@@ -83,7 +83,7 @@ std::string ChainEditor::addNode(const std::string& moduleType, juce::Point<floa
 
     nodeVisuals.push_back(visual);
 
-    // Phase 8 Fix: Save initial position to SignalGraph
+    // Save initial position to SignalGraph
     // This ensures newly added nodes keep their positions across rebuilds
     currentGraph->setNodePosition(nodeId, position.x, position.y);
 
@@ -474,7 +474,7 @@ void ChainEditor::mouseUp(const juce::MouseEvent& event)
         if (node != nodeVisuals.end()) {
             node->isDragging = false;
 
-            // Phase 8 Fix: Save node position to SignalGraph
+            // Save node position to SignalGraph
             // This ensures positions persist across visual rebuilds
             if (currentGraph) {
                 currentGraph->setNodePosition(node->id, node->position.x, node->position.y);
@@ -610,10 +610,10 @@ void ChainEditor::rebuildVisualsFromGraph()
         visual.displayName = node->getName();
         visual.type = "unknown";
 
-        // Phase 8 Fix: Load position from SignalGraph if available
+        // Load position from SignalGraph if available
         // This preserves user-arranged positions across rebuilds
         auto savedPos = currentGraph->getNodePosition(id);
-        if (savedPos.x != 0.0f || savedPos.y != 0.0f) {
+        if (savedPos.isSet) {
             // Use saved position from graph
             visual.position = juce::Point<float>(savedPos.x, savedPos.y);
         } else {
