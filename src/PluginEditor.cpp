@@ -433,6 +433,17 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     // Initialize node selectors from current graph state
     updateNodeSelectors();
 
+    // Sync SingleCycleView waveform type with actual oscillator waveform
+    {
+        if (auto* voice = audioProcessor.getVoice(0)) {
+            auto waveform = voice->getOscillator().getWaveform();
+            singleCycleView.setWaveformType(waveform);
+        }
+    }
+
+    // Sync oscillator panel (including waveform combo) with actual voice state
+    updateOscillatorPanel();
+
     // Start timer for UI updates (60 FPS)
     startTimerHz(60);
 }
@@ -871,14 +882,10 @@ void VizASynthAudioProcessorEditor::timerCallback()
     // Update probe button highlighting
     updateProbeButtons();
 
-    // Sync SingleCycleView waveform type with oscillator setting
-    int oscType = static_cast<int>(audioProcessor.getAPVTS().getRawParameterValue("oscType")->load());
-    switch (oscType)
-    {
-        case 0: singleCycleView.setWaveformType(vizasynth::OscillatorSource::Waveform::Sine); break;
-        case 1: singleCycleView.setWaveformType(vizasynth::OscillatorSource::Waveform::Saw); break;
-        case 2: singleCycleView.setWaveformType(vizasynth::OscillatorSource::Waveform::Square); break;
-        default: singleCycleView.setWaveformType(vizasynth::OscillatorSource::Waveform::Sine); break;
+    // Sync SingleCycleView waveform type with actual oscillator waveform
+    if (auto* voice = audioProcessor.getVoice(0)) {
+        auto waveform = voice->getOscillator().getWaveform();
+        singleCycleView.setWaveformType(waveform);
     }
 
     // Track note changes for envelope visualization (handles external MIDI)
@@ -1278,14 +1285,16 @@ void VizASynthAudioProcessorEditor::updateOscillatorPanel()
         detuneSlider.setValue(osc->getDetuneCents(), juce::dontSendNotification);
         octaveSlider.setValue(osc->getOctaveOffset(), juce::dontSendNotification);
 
-        // Update waveform combo if it's a PolyBLEP oscillator
-        if (auto* polyblep = dynamic_cast<vizasynth::PolyBLEPOscillator*>(osc)) {
-            int waveformIndex = static_cast<int>(polyblep->getWaveform());
-            oscTypeCombo.setSelectedId(waveformIndex + 1, juce::dontSendNotification);
-        }
-
         // Update band-limited toggle
         bandLimitedToggle.setToggleState(osc->isBandLimited(), juce::dontSendNotification);
+    }
+
+    // For waveform, read from actual voice oscillator (source of truth for audio)
+    // This ensures the UI shows what's actually being played
+    if (auto* voice = audioProcessor.getVoice(0)) {
+        auto waveform = voice->getOscillator().getWaveform();
+        int waveformIndex = static_cast<int>(waveform);
+        oscTypeCombo.setSelectedId(waveformIndex + 1, juce::dontSendNotification);
     }
 }
 
