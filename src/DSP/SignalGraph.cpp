@@ -454,7 +454,7 @@ float SignalGraph::process(float input)
         graphNode.isProcessed = false;
     }
 
-    // Process nodes in topological order
+    // Process nodes in topological order (connected to output path)
     for (const auto& nodeId : processingOrder) {
         auto* graphNode = getGraphNode(nodeId);
         if (!graphNode || !graphNode->node) {
@@ -497,6 +497,39 @@ float SignalGraph::process(float input)
             bool shouldProbe = activeProbeNodeId.empty() || (activeProbeNodeId == nodeId);
             if (shouldProbe && graphNode->probeBuffer) {
                 graphNode->probeBuffer->push(output);
+            }
+        }
+    }
+
+    // Process disconnected nodes for probing (nodes not in the output path)
+    // This allows visualizations to show disconnected oscillators, etc.
+    if (probingEnabled) {
+        for (auto& [nodeId, graphNode] : nodes) {
+            // Skip already processed nodes (they were in the output path)
+            if (graphNode.isProcessed) {
+                continue;
+            }
+
+            if (!graphNode.node) {
+                continue;
+            }
+
+            // Process this disconnected node
+            // For source nodes (like oscillators), input is 0
+            // For other disconnected nodes, we process with 0 input
+            float nodeInput = 0.0f;
+            if (nodeId == inputNodeId) {
+                nodeInput = input;
+            }
+
+            float output = graphNode.node->process(nodeInput);
+            graphNode.lastOutput = output;
+            graphNode.isProcessed = true;
+
+            // Probe this node
+            bool shouldProbe = activeProbeNodeId.empty() || (activeProbeNodeId == nodeId);
+            if (shouldProbe && graphNode.probeBuffer) {
+                graphNode.probeBuffer->push(output);
             }
         }
     }
