@@ -1,5 +1,6 @@
 #include "SignalNodeFactory.h"
 #include "SignalGraph.h"  // For MixerNode
+#include "OutputNode.h"   // For OutputNode
 #include <algorithm>
 #include <cctype>
 
@@ -42,6 +43,14 @@ void SignalNodeFactory::ensureDefaultsRegistered()
     };
     registry["mixer"] = mixerCreator;
     registry["mix"] = mixerCreator;
+
+    // Register output type (note: typically created automatically by SignalGraph,
+    // but registered here for deserialization support)
+    auto outputCreator = []() -> std::unique_ptr<SignalNode> {
+        return std::make_unique<OutputNode>();
+    };
+    registry["output"] = outputCreator;
+    registry["out"] = outputCreator;
 }
 
 std::unique_ptr<SignalNode> SignalNodeFactory::create(const std::string& type)

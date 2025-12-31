@@ -2,6 +2,7 @@
 
 #include "../Core/SignalNode.h"
 #include "../Visualization/ProbeBuffer.h"
+#include "OutputNode.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 #include <memory>
@@ -101,6 +102,12 @@ public:
 class SignalGraph : public SignalNode {
 public:
     using NodeId = std::string;
+
+    /**
+     * The constant ID for the output node.
+     * This node is automatically created and cannot be deleted.
+     */
+    static constexpr const char* OUTPUT_NODE_ID = "output";
 
     /**
      * Connection represents an edge in the signal graph
@@ -210,8 +217,21 @@ public:
 
     /**
      * Clear the entire graph.
+     * Note: The output node is recreated after clearing.
      */
     void clear();
+
+    /**
+     * Check if a node is protected from deletion.
+     * The output node is always protected.
+     */
+    bool isNodeProtected(const NodeId& id) const;
+
+    /**
+     * Ensure the output node exists in the graph.
+     * Creates it if missing. Called automatically by constructor and clear().
+     */
+    void ensureOutputNodeExists();
 
     //=========================================================================
     // Graph Querying

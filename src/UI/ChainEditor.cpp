@@ -33,6 +33,11 @@ std::string ChainEditor::addNode(const std::string& moduleType, juce::Point<floa
         return "";
     }
 
+    // Prevent adding output nodes from palette - there can only be one
+    if (moduleType == "output" || moduleType == "out") {
+        return "";
+    }
+
     // Create the node via factory
     auto node = SignalNodeFactory::create(moduleType);
     if (!node) {
@@ -545,6 +550,11 @@ bool ChainEditor::keyPressed(const juce::KeyPress& key)
     // Delete key removes selected node
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
         if (!selectedNodeId.empty()) {
+            // Check if the node is protected (e.g., the output node)
+            if (currentGraph && currentGraph->isNodeProtected(selectedNodeId)) {
+                // Cannot delete protected nodes - could show feedback here
+                return true;
+            }
             removeNode(selectedNodeId);
             return true;
         }
@@ -781,27 +791,54 @@ void ChainEditor::drawNode(juce::Graphics& g, const NodeVisual& node)
         g.drawText("⊘", eyeBounds, juce::Justification::centred);  // Crossed circle as "hidden" indicator
     }
 
-    // Input port
+    // Check if this is the OUTPUT node (which has no output port)
+    bool isOutputNodeType = (node.id == SignalGraph::OUTPUT_NODE_ID);
+
+    // Input port (shown for all nodes except oscillators which have no inputs)
     auto inputPort = getNodeInputPort(node).translated(offset.x, offset.y);
     float pRadius = getPortRadius();
     g.setColour(getInputPortColor());
     g.fillEllipse(inputPort.x - pRadius, inputPort.y - pRadius,
                   pRadius * 2, pRadius * 2);
 
-    // Output port
-    auto outputPort = getNodeOutputPort(node).translated(offset.x, offset.y);
-    g.setColour(getOutputPortColor());
-    g.fillEllipse(outputPort.x - pRadius, outputPort.y - pRadius,
-                  pRadius * 2, pRadius * 2);
+    // Output port (not shown for OUTPUT node - it can't connect to anything)
+    if (!isOutputNodeType) {
+        auto outputPort = getNodeOutputPort(node).translated(offset.x, offset.y);
+        g.setColour(getOutputPortColor());
+        g.fillEllipse(outputPort.x - pRadius, outputPort.y - pRadius,
+                      pRadius * 2, pRadius * 2);
+    }
 
-    // Draw output node indicator
+    // Draw output node indicator - special rendering for the OUTPUT node
     if (node.isOutputNode) {
-        // Gold border to indicate output node
-        g.setColour(juce::Colours::gold);
-        g.drawRoundedRectangle(bounds.expanded(3), 10.0f, 3.0f);
+        // Check if this is the dedicated OutputNode type (vs legacy output marking)
+        bool isOutputNodeType = false;
+        if (currentGraph) {
+            auto* nodeObj = currentGraph->getNode(node.id);
+            isOutputNodeType = (node.id == SignalGraph::OUTPUT_NODE_ID);
+        }
+
+        if (isOutputNodeType) {
+            // Special rendering for the dedicated OUTPUT node:
+            // - Thicker cyan/teal border to match the OutputNode color
+            // - No output port (already rendered, but we'll skip it next time)
+            // - Arrow pointing into the node to indicate final destination
+            g.setColour(juce::Colour(0xff00BCD4));  // Cyan/teal
+            g.drawRoundedRectangle(bounds.expanded(4), 12.0f, 4.0f);
+
+            // Draw "speaker" or output indicator inside
+            auto speakerBounds = bounds.reduced(bounds.getWidth() * 0.3f, bounds.getHeight() * 0.25f);
+            g.setColour(juce::Colour(0xff00BCD4).withAlpha(0.3f));
+            g.fillRoundedRectangle(speakerBounds, 4.0f);
+        } else {
+            // Legacy output node indicator (gold border)
+            g.setColour(juce::Colours::gold);
+            g.drawRoundedRectangle(bounds.expanded(3), 10.0f, 3.0f);
+        }
 
         // "OUTPUT" label below the node
         g.setFont(10.0f);
+        g.setColour(config.getTextColour());
         auto labelBounds = juce::Rectangle<float>(
             bounds.getX(),
             bounds.getBottom() + 2,

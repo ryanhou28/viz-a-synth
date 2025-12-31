@@ -23,7 +23,9 @@ VizASynthVoice::VizASynthVoice(const ChainConfiguration& config)
 
 void VizASynthVoice::initializeDefaultGraph()
 {
-    // Build the signal graph: OSC -> FILTER
+    // Build the signal graph: OSC -> FILTER -> OUTPUT
+    // Note: SignalGraph constructor automatically creates the OUTPUT node
+
     // Create oscillator node
     auto oscNode = std::make_unique<PolyBLEPOscillator>();
     oscNode->setWaveform(OscillatorWaveform::Sine);
@@ -36,20 +38,21 @@ void VizASynthVoice::initializeDefaultGraph()
     filterNode = filterModule.get();  // Keep pointer before move
     processingGraph.addNode(std::move(filterModule), "filter1");
 
-    // Connect OSC -> FILTER
-    [[maybe_unused]] bool connected = processingGraph.connect("osc1", "filter1");
+    // Connect OSC -> FILTER -> OUTPUT
+    [[maybe_unused]] bool connected1 = processingGraph.connect("osc1", "filter1");
+    [[maybe_unused]] bool connected2 = processingGraph.connect("filter1", SignalGraph::OUTPUT_NODE_ID);
 
-    // Set filter1 as the output node
-    processingGraph.setOutputNode("filter1");
+    // Output node is already set by SignalGraph constructor
 
     // Set graph name for identification
     processingGraph.setName("VoiceGraph");
 
     #if JUCE_DEBUG
     juce::Logger::writeToLog("VizASynthVoice::initializeDefaultGraph() - Graph initialized");
-    juce::Logger::writeToLog("  Nodes: osc1, filter1");
-    juce::Logger::writeToLog("  Connection osc1->filter1: " + juce::String(connected ? "SUCCESS" : "FAILED"));
-    juce::Logger::writeToLog("  Output node: filter1");
+    juce::Logger::writeToLog("  Nodes: osc1, filter1, " + juce::String(SignalGraph::OUTPUT_NODE_ID));
+    juce::Logger::writeToLog("  Connection osc1->filter1: " + juce::String(connected1 ? "SUCCESS" : "FAILED"));
+    juce::Logger::writeToLog("  Connection filter1->output: " + juce::String(connected2 ? "SUCCESS" : "FAILED"));
+    juce::Logger::writeToLog("  Output node: " + juce::String(SignalGraph::OUTPUT_NODE_ID));
 
     // Verify connections are stored
     auto conns = processingGraph.getConnections();
@@ -806,7 +809,8 @@ bool VizASynthAudioProcessor::isAnyNoteActive() const
 //==============================================================================
 void VizASynthAudioProcessor::initializeDemoGraph()
 {
-    // Create a simple demo graph: OSC -> FILTER -> Output
+    // Create a simple demo graph: OSC -> FILTER -> OUTPUT
+    // Note: SignalGraph constructor automatically creates the OUTPUT node
     // This allows the ChainEditor UI to be tested without affecting audio
 
     auto osc1 = std::make_unique<PolyBLEPOscillator>();
@@ -818,17 +822,17 @@ void VizASynthAudioProcessor::initializeDemoGraph()
     filter1->setCutoff(1000.0f);
     demoGraph.addNode(std::move(filter1), "filter1");
 
-    // Connect OSC -> FILTER
+    // Connect OSC -> FILTER -> OUTPUT
     demoGraph.connect("osc1", "filter1");
+    demoGraph.connect("filter1", SignalGraph::OUTPUT_NODE_ID);
 
-    // Set filter1 as the output node
-    demoGraph.setOutputNode("filter1");
+    // Output node is already set by SignalGraph constructor
 
     // Set the graph name
     demoGraph.setName("DemoGraph");
 
     #if JUCE_DEBUG
-    juce::Logger::writeToLog("Demo graph initialized with osc1 -> filter1");
+    juce::Logger::writeToLog("Demo graph initialized with osc1 -> filter1 -> output");
     #endif
 }
 
@@ -961,10 +965,29 @@ void VizASynthAudioProcessor::performGraphSynchronization()
     }
 
     // Schedule probe registration on message thread for voice 0 (used for visualization)
+    // Bug 9.1 Fix: Clear old probes before re-registering to prevent orphan probes from deleted nodes.
+    // Since we disabled the registry during fromJsonString(), the clear() call inside fromJson()
+    // couldn't unregister old probes. We need to explicitly clear node probes here.
     juce::MessageManager::callAsync([this]() {
         if (auto* voice0 = getVoice(0)) {
             auto& graph = voice0->getSignalGraph();
-            if (graph.getProbeRegistry()) {
+            auto* registry = graph.getProbeRegistry();
+            if (registry) {
+                // Unregister all node probes (those ending with ".output") except special ones like "mix.output"
+                // We collect IDs first to avoid modifying the registry while iterating
+                std::vector<std::string> probesToRemove;
+                for (const auto& probe : registry->getAvailableProbes()) {
+                    // Only remove probes that were registered by the graph (ending with ".output")
+                    // but skip the special "mix.output" probe which is managed separately
+                    if (probe.id != "mix.output" && probe.id.find(".output") != std::string::npos) {
+                        probesToRemove.push_back(probe.id);
+                    }
+                }
+                for (const auto& probeId : probesToRemove) {
+                    registry->unregisterProbe(probeId);
+                }
+
+                // Now register the probes for the current graph nodes
                 graph.registerAllProbesWithRegistry();
             }
         }

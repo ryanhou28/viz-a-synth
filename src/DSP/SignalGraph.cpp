@@ -14,6 +14,8 @@ namespace vizasynth {
 
 SignalGraph::SignalGraph()
 {
+    // Automatically create the output node
+    ensureOutputNodeExists();
 }
 
 SignalGraph::NodeId SignalGraph::addNode(std::unique_ptr<SignalNode> node, const NodeId& id, int numInputs)
@@ -63,6 +65,14 @@ SignalGraph::NodeId SignalGraph::addNode(std::unique_ptr<SignalNode> node, const
 
 std::unique_ptr<SignalNode> SignalGraph::removeNode(const NodeId& id)
 {
+    // Cannot remove protected nodes (like the output node)
+    if (isNodeProtected(id)) {
+        #if JUCE_DEBUG
+        juce::Logger::writeToLog("SignalGraph::removeNode() - Cannot remove protected node: " + juce::String(id));
+        #endif
+        return nullptr;
+    }
+
     auto it = nodes.find(id);
     if (it == nodes.end()) {
         return nullptr;
@@ -199,8 +209,51 @@ void SignalGraph::clear()
     inputNodeId.clear();
     markProcessingOrderDirty();
 
+    // Recreate the output node (it must always exist)
+    ensureOutputNodeExists();
+
     // Notify listeners of major structural change
     notifyGraphStructureChanged();
+}
+
+bool SignalGraph::isNodeProtected(const NodeId& id) const
+{
+    // The output node is always protected
+    if (id == OUTPUT_NODE_ID) {
+        return true;
+    }
+
+    // Check if the node itself declares itself as protected
+    const auto* node = getNode(id);
+    if (auto* outputNode = dynamic_cast<const OutputNode*>(node)) {
+        return outputNode->isProtected();
+    }
+
+    return false;
+}
+
+void SignalGraph::ensureOutputNodeExists()
+{
+    // Check if output node already exists
+    if (nodes.find(OUTPUT_NODE_ID) != nodes.end()) {
+        return;
+    }
+
+    // Create the output node
+    auto outputNode = std::make_unique<OutputNode>();
+
+    // Add it to the graph
+    // Note: We don't want to notify listeners during construction
+    // so we add directly to the map
+    GraphNode graphNode(std::move(outputNode), OUTPUT_NODE_ID, 1);
+    graphNode.probeVisible = true;  // Output probe is visible by default
+
+    nodes.emplace(OUTPUT_NODE_ID, std::move(graphNode));
+
+    // Set as the output node
+    outputNodeId = OUTPUT_NODE_ID;
+
+    markProcessingOrderDirty();
 }
 
 //=============================================================================
@@ -833,8 +886,12 @@ juce::var SignalGraph::toJson() const
         if (graphNode.node) {
             std::string nodeName = graphNode.node->getName();
 
+            // Detect output node
+            if (dynamic_cast<const OutputNode*>(graphNode.node.get())) {
+                nodeType = "output";
+            }
             // Detect oscillator
-            if (dynamic_cast<const OscillatorSource*>(graphNode.node.get())) {
+            else if (dynamic_cast<const OscillatorSource*>(graphNode.node.get())) {
                 nodeType = "oscillator";
                 if (nodeName.find("PolyBLEP") != std::string::npos) {
                     nodeSubtype = "polyblep";
