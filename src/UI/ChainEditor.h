@@ -305,6 +305,9 @@ private:
 
         juce::ToggleButton* probeVisibleToggle = nullptr;
 
+        // Delete button
+        std::unique_ptr<juce::TextButton> deleteButton;
+
         // Section labels
         std::unique_ptr<juce::Label> nodeNameLabel;
         std::unique_ptr<juce::Label> nodeTypeLabel;

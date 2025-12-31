@@ -857,9 +857,12 @@ void VizASynthAudioProcessorEditor::resized()
     chainEditorButton.setBounds(getWidth() - chainEditorButtonWidth - 10, 10,
                                  chainEditorButtonWidth, chainEditorButtonHeight);
 
-    // Chain Editor - overlay the entire window when visible
+    // Chain Editor - overlay the window ABOVE the keyboard/bottom area when visible
     if (showChainEditor) {
-        chainEditor.setBounds(getLocalBounds());
+        // Calculate the area above the keyboard (exclude bottom area)
+        auto chainEditorBounds = getLocalBounds();
+        chainEditorBounds.removeFromBottom(layout.bottomAreaHeight);
+        chainEditor.setBounds(chainEditorBounds);
     }
 }
 
@@ -1113,7 +1116,9 @@ void VizASynthAudioProcessorEditor::updateFromProbeRegistry()
             isUpdatingProbeSelection = false;
         };
 
-        addAndMakeVisible(*button);
+        addChildComponent(*button);
+        // Only show if ChainEditor is not visible
+        button->setVisible(!showChainEditor);
         probeButtons.push_back(std::move(button));
     }
 
@@ -1376,4 +1381,38 @@ void VizASynthAudioProcessorEditor::setLeftPanelControlsVisible(bool visible)
     sustainLabel.setVisible(visible);
     releaseSlider.setVisible(visible);
     releaseLabel.setVisible(visible);
+
+    // Visualization controls (hide when ChainEditor is shown)
+    scopeButton.setVisible(visible);
+    spectrumButton.setVisible(visible);
+    harmonicsButton.setVisible(visible);
+    poleZeroButton.setVisible(visible);
+    bodeButton.setVisible(visible);
+    transferFunctionButton.setVisible(visible);
+    impulseResponseButton.setVisible(visible);
+    freezeButton.setVisible(visible);
+    clearTraceButton.setVisible(visible);
+    timeWindowLabel.setVisible(visible);
+    timeWindowSlider.setVisible(visible);
+
+    // Probe buttons
+    for (auto& button : probeButtons) {
+        button->setVisible(visible);
+    }
+
+    // Visualizations
+    if (visible) {
+        // Restore visibility based on current mode
+        updateVisualizationMode();
+    } else {
+        // Hide all visualizations when ChainEditor is shown
+        oscilloscope.setVisible(false);
+        singleCycleView.setVisible(false);
+        spectrumAnalyzer.setVisible(false);
+        harmonicView.setVisible(false);
+        poleZeroPlot.setVisible(false);
+        bodePlot.setVisible(false);
+        transferFunctionDisplay.setVisible(false);
+        impulseResponse.setVisible(false);
+    }
 }

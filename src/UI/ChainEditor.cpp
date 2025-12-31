@@ -1169,6 +1169,15 @@ ChainEditor::PropertiesPanel::PropertiesPanel(ChainEditor& editor)
     nodeTypeLabel->setFont(juce::Font(11.0f));
     nodeTypeLabel->setColour(juce::Label::textColourId, juce::Colours::grey);
     addAndMakeVisible(nodeTypeLabel.get());
+
+    // Create delete button (initially hidden)
+    deleteButton = std::make_unique<juce::TextButton>("Delete Node");
+    deleteButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xffdc3545));  // Red color
+    deleteButton->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    deleteButton->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    deleteButton->addListener(this);
+    deleteButton->setVisible(false);
+    addAndMakeVisible(deleteButton.get());
 }
 
 void ChainEditor::PropertiesPanel::paint(juce::Graphics& g)
@@ -1193,6 +1202,10 @@ void ChainEditor::PropertiesPanel::resized()
     auto bounds = getLocalBounds().reduced(10);
     bounds.removeFromTop(30);  // Skip title area
 
+    // Reserve space for delete button at bottom
+    auto deleteButtonBounds = bounds.removeFromBottom(36);
+    deleteButtonBounds = deleteButtonBounds.reduced(0, 4);  // Add some vertical padding
+
     // Node name and type labels
     if (nodeNameLabel && nodeNameLabel->isVisible()) {
         nodeNameLabel->setBounds(bounds.removeFromTop(20));
@@ -1213,6 +1226,11 @@ void ChainEditor::PropertiesPanel::resized()
         }
         parameterControls[i]->setBounds(bounds.removeFromTop(controlHeight));
         bounds.removeFromTop(spacing);
+    }
+
+    // Position delete button at bottom
+    if (deleteButton) {
+        deleteButton->setBounds(deleteButtonBounds);
     }
 }
 
@@ -1241,6 +1259,7 @@ void ChainEditor::PropertiesPanel::clearSelection()
 
     if (nodeNameLabel) nodeNameLabel->setVisible(false);
     if (nodeTypeLabel) nodeTypeLabel->setVisible(false);
+    if (deleteButton) deleteButton->setVisible(false);
 
     repaint();
 }
@@ -1292,6 +1311,23 @@ void ChainEditor::PropertiesPanel::rebuildControls()
 
     // Always add probe visibility control
     createProbeVisibilityControl();
+
+    // Show and configure delete button
+    if (deleteButton) {
+        deleteButton->setVisible(true);
+
+        // Check if node is protected (cannot be deleted)
+        bool isProtected = owner.currentGraph->isNodeProtected(selectedNodeId);
+        deleteButton->setEnabled(!isProtected);
+
+        if (isProtected) {
+            deleteButton->setButtonText("Cannot Delete");
+            deleteButton->setColour(juce::TextButton::buttonColourId, juce::Colours::grey);
+        } else {
+            deleteButton->setButtonText("Delete Node");
+            deleteButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xffdc3545));  // Red
+        }
+    }
 
     resized();
 }
@@ -1520,6 +1556,10 @@ void ChainEditor::PropertiesPanel::buttonClicked(juce::Button* button)
         owner.currentGraph->setNodeProbeVisible(selectedNodeId, button->getToggleState());
         owner.notifyGraphModified();
         owner.repaint();  // Update node visual indicator
+    } else if (button == deleteButton.get()) {
+        // Delete the selected node
+        std::string nodeToDelete = selectedNodeId;
+        owner.removeNode(nodeToDelete);  // This will also call clearSelection()
     }
 }
 
