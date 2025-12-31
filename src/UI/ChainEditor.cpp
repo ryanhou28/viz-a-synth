@@ -61,24 +61,28 @@ std::string ChainEditor::addNode(const std::string& moduleType, juce::Point<floa
     visual.id = nodeId;
     visual.type = moduleType;
 
-    // Get display name from node, or generate friendly name from ID
+    // Generate a unique, user-friendly display name
+    // Use simple names like "Oscillator 1", "Filter 1", etc.
+    std::string displayName;
+    if (moduleType == "oscillator") {
+        displayName = generateUniqueDisplayName("Oscillator");
+    } else if (moduleType == "filter") {
+        displayName = generateUniqueDisplayName("Filter");
+    } else if (moduleType == "mixer") {
+        displayName = generateUniqueDisplayName("Mixer");
+    } else {
+        displayName = generateUniqueDisplayName(moduleType);
+    }
+
+    // Store the display name in the graph so it persists
+    currentGraph->setNodeDisplayName(nodeId, displayName);
+    visual.displayName = displayName;
+
+    // Get color from node
     auto* createdNode = currentGraph->getNode(nodeId);
     if (createdNode) {
-        // Use node's name (e.g., "PolyBLEP Oscillator") combined with the ID for uniqueness
-        std::string baseName = createdNode->getName();
-        // Create a short display name like "Osc 1", "Filter 1", etc.
-        if (moduleType == "oscillator") {
-            visual.displayName = "Osc " + std::to_string(nextNodeIndex - 1);
-        } else if (moduleType == "filter") {
-            visual.displayName = "Filter " + std::to_string(nextNodeIndex - 1);
-        } else if (moduleType == "mixer") {
-            visual.displayName = "Mix " + std::to_string(nextNodeIndex - 1);
-        } else {
-            visual.displayName = baseName;
-        }
         visual.color = createdNode->getProbeColor();
     } else {
-        visual.displayName = nodeId;
         visual.color = juce::Colours::lightblue;
     }
 
@@ -1034,7 +1038,47 @@ juce::Colour ChainEditor::getConnectionHoverColor() const
 
 std::string ChainEditor::generateNodeId(const std::string& type)
 {
-    return type + std::to_string(nextNodeIndex++);
+    if (!currentGraph) {
+        return type + std::to_string(nextNodeIndex++);
+    }
+
+    // Find a unique ID by checking existing nodes in the graph
+    int index = 1;
+    std::string candidate;
+    do {
+        candidate = type + std::to_string(index);
+        index++;
+    } while (currentGraph->getNode(candidate) != nullptr);
+
+    return candidate;
+}
+
+std::string ChainEditor::generateUniqueDisplayName(const std::string& baseName)
+{
+    if (!currentGraph) {
+        return baseName + " 1";
+    }
+
+    // Find a unique display name by checking existing nodes in the graph
+    int index = 1;
+    std::string candidate;
+    bool found;
+
+    do {
+        candidate = baseName + " " + std::to_string(index);
+        found = false;
+
+        // Check if any existing node has this display name
+        currentGraph->forEachNode([&](const std::string& nodeId, const SignalNode*) {
+            if (currentGraph->getNodeDisplayName(nodeId) == candidate) {
+                found = true;
+            }
+        });
+
+        index++;
+    } while (found);
+
+    return candidate;
 }
 
 //=============================================================================

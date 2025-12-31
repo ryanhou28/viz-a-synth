@@ -31,12 +31,14 @@ void VizASynthVoice::initializeDefaultGraph()
     oscNode->setWaveform(OscillatorWaveform::Sine);
     oscillator = oscNode.get();  // Keep pointer before move
     processingGraph.addNode(std::move(oscNode), "osc1");
+    processingGraph.setNodeDisplayName("osc1", "Oscillator 1");
 
     // Create filter node
     auto filterModule = std::make_unique<StateVariableFilterWrapper>();
     filterModule->setType(FilterNode::Type::LowPass);
     filterNode = filterModule.get();  // Keep pointer before move
     processingGraph.addNode(std::move(filterModule), "filter1");
+    processingGraph.setNodeDisplayName("filter1", "Filter 1");
 
     // Connect OSC -> FILTER -> OUTPUT
     [[maybe_unused]] bool connected1 = processingGraph.connect("osc1", "filter1");
@@ -816,11 +818,13 @@ void VizASynthAudioProcessor::initializeDemoGraph()
     auto osc1 = std::make_unique<PolyBLEPOscillator>();
     osc1->setWaveform(OscillatorWaveform::Sine);
     demoGraph.addNode(std::move(osc1), "osc1");
+    demoGraph.setNodeDisplayName("osc1", "Oscillator 1");
 
     auto filter1 = std::make_unique<StateVariableFilterWrapper>();
     filter1->setType(FilterNode::Type::LowPass);
     filter1->setCutoff(1000.0f);
     demoGraph.addNode(std::move(filter1), "filter1");
+    demoGraph.setNodeDisplayName("filter1", "Filter 1");
 
     // Connect OSC -> FILTER -> OUTPUT
     demoGraph.connect("osc1", "filter1");

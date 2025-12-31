@@ -414,9 +414,10 @@ private:
 
     void notifyGraphModified();
 
-    // Node ID generation
+    // Node ID and display name generation
     std::string generateNodeId(const std::string& type);
-    int nextNodeIndex = 1;
+    std::string generateUniqueDisplayName(const std::string& baseName);
+    int nextNodeIndex = 1;  // Fallback counter (not used when graph is available)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChainEditor)
 };
