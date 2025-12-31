@@ -400,19 +400,26 @@ void ChainEditor::mouseDown(const juce::MouseEvent& event)
         }
     }
 
-    // Check if clicking on a node
+    // FIRST: Check if clicking on ANY node's output port (for starting connection drag)
+    // This must happen before findNodeAt() because ports extend beyond node bounds
+    float hitRadius = getPortHitRadius();
+    for (auto& nodeVisual : nodeVisuals) {
+        // Check output port - skip OUTPUT node (has no output port)
+        if (nodeVisual.id != SignalGraph::OUTPUT_NODE_ID) {
+            auto outputPort = getNodeOutputPort(nodeVisual);
+            if (canvasPos.getDistanceFrom(outputPort) < hitRadius) {
+                dragState.type = DragState::Type::Connection;
+                dragState.nodeId = nodeVisual.id;
+                dragState.startPos = outputPort;
+                dragState.currentPos = canvasPos;
+                return;
+            }
+        }
+    }
+
+    // Check if clicking on a node body
     auto* node = findNodeAt(canvasPos);
     if (node) {
-        // Check if clicking on output port (start connection drag)
-        auto outputPort = getNodeOutputPort(*node);
-        if (canvasPos.getDistanceFrom(outputPort) < portRadius * 2) {
-            dragState.type = DragState::Type::Connection;
-            dragState.nodeId = node->id;
-            dragState.startPos = outputPort;
-            dragState.currentPos = canvasPos;
-            return;
-        }
-
         // Regular node selection and drag
         selectNode(node->id);
         dragState.type = DragState::Type::Node;
@@ -464,9 +471,32 @@ void ChainEditor::mouseUp(const juce::MouseEvent& event)
     auto canvasPos = event.position - canvasArea.getTopLeft().toFloat();
 
     if (dragState.type == DragState::Type::Connection) {
-        // Check if dropped on a node's input port
-        auto* targetNode = findNodeAt(canvasPos);
-        if (targetNode && targetNode->id != dragState.nodeId) {
+        // Check if dropped near a node's input port
+        // Use larger hit radius for easier dropping
+        float hitRadius = getPortHitRadius();
+
+        // First, check all nodes to find one with an input port near the drop point
+        NodeVisual* targetNode = nullptr;
+        for (auto& node : nodeVisuals) {
+            if (node.id == dragState.nodeId) continue;  // Skip source node
+
+            auto inputPort = getNodeInputPort(node);
+            if (canvasPos.getDistanceFrom(inputPort) < hitRadius) {
+                targetNode = &node;
+                break;
+            }
+        }
+
+        // If no input port was near, fall back to checking if dropped anywhere on a node
+        if (!targetNode) {
+            targetNode = findNodeAt(canvasPos);
+            // Make sure we're not connecting to ourselves
+            if (targetNode && targetNode->id == dragState.nodeId) {
+                targetNode = nullptr;
+            }
+        }
+
+        if (targetNode) {
             // Connect the nodes
             connectNodes(dragState.nodeId, targetNode->id);
         }
@@ -954,6 +984,15 @@ float ChainEditor::getHitThreshold() const
 {
     auto& config = ConfigurationManager::getInstance();
     return config.getLayoutFloat("components.chainEditor.hitThreshold", 10.0f);
+}
+
+float ChainEditor::getPortHitRadius() const
+{
+    auto& config = ConfigurationManager::getInstance();
+    // Default to 2.5x the visual port radius for easier clicking
+    // With default portRadius of 8px, this gives a 20px hit radius
+    float visualRadius = getPortRadius();
+    return config.getLayoutFloat("components.chainEditor.portHitRadius", visualRadius * 2.5f);
 }
 
 int ChainEditor::getGridSize() const

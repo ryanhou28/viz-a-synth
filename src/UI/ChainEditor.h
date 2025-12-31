@@ -358,6 +358,7 @@ private:
     int getPaletteWidth() const;
     int getPropertiesWidth() const;
     float getHitThreshold() const;
+    float getPortHitRadius() const;  // Larger than visual radius for easier clicking
     int getGridSize() const;
     int getNodeSpacing() const;
 
