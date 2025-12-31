@@ -108,8 +108,9 @@ private:
     juce::TextButton transferFunctionButton{"H(z)"};
     juce::TextButton impulseResponseButton{"h[n]"};
 
-    // Dynamic probe selector buttons (generated from ProbeRegistry)
-    std::vector<std::unique_ptr<juce::TextButton>> probeButtons;
+    // Probe selector dropdown (generated from ProbeRegistry)
+    juce::ComboBox probeSelector;
+    juce::Label probeSelectorLabel;
     juce::TextButton freezeButton{"Freeze"};
     juce::TextButton clearTraceButton{"Clear"};
 

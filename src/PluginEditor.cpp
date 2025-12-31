@@ -98,7 +98,28 @@ VizASynthAudioProcessorEditor::VizASynthAudioProcessorEditor(VizASynthAudioProce
     // Initial visualization mode
     setVisualizationMode(VisualizationMode::Oscilloscope);
 
-    // Setup dynamic probe selector buttons from ProbeRegistry
+    // Setup probe selector dropdown from ProbeRegistry
+    probeSelectorLabel.setText("Probe:", juce::dontSendNotification);
+    probeSelectorLabel.setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(probeSelectorLabel);
+
+    probeSelector.onChange = [this]() {
+        int selectedId = probeSelector.getSelectedId();
+        if (selectedId > 0) {
+            // Get the probe ID from the stored mapping
+            auto& registry = audioProcessor.getProbeRegistry();
+            auto availableProbes = registry.getAvailableProbes();
+            int index = selectedId - 1;  // ComboBox IDs are 1-based
+            if (index >= 0 && index < static_cast<int>(availableProbes.size())) {
+                isUpdatingProbeSelection = true;
+                registry.setActiveProbe(availableProbes[index].id);
+                isUpdatingProbeSelection = false;
+            }
+        }
+    };
+    addAndMakeVisible(probeSelector);
+
+    // Populate probe selector from ProbeRegistry
     updateFromProbeRegistry();
 
     // Freeze button
@@ -847,13 +868,12 @@ void VizASynthAudioProcessorEditor::resized()
     impulseResponseButton.setBounds(vizControlArea.removeFromLeft(impulseResponseButtonWidth));
     vizControlArea.removeFromLeft(layout.vizControlSectionSpacing);
 
-    // Layout dynamic probe buttons
-    for (size_t i = 0; i < probeButtons.size(); ++i) {
-        probeButtons[i]->setBounds(vizControlArea.removeFromLeft(layout.vizControlProbeWidth));
-        if (i < probeButtons.size() - 1) {
-            vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
-        }
-    }
+    // Layout probe selector dropdown
+    int probeLabelWidth = config.getLayoutInt("components.probeSelector.labelWidth", 40);
+    int probeSelectorWidth = config.getLayoutInt("components.probeSelector.width", 80);
+    probeSelectorLabel.setBounds(vizControlArea.removeFromLeft(probeLabelWidth));
+    vizControlArea.removeFromLeft(2);
+    probeSelector.setBounds(vizControlArea.removeFromLeft(probeSelectorWidth));
     vizControlArea.removeFromLeft(layout.vizControlSectionSpacing);
     freezeButton.setBounds(vizControlArea.removeFromLeft(layout.vizControlFreezeWidth));
     vizControlArea.removeFromLeft(layout.vizControlProbeSpacing);
@@ -882,10 +902,15 @@ void VizASynthAudioProcessorEditor::timerCallback()
     // Update probe button highlighting
     updateProbeButtons();
 
-    // Sync SingleCycleView waveform type with actual oscillator waveform
-    if (auto* voice = audioProcessor.getVoice(0)) {
-        auto waveform = voice->getOscillator().getWaveform();
-        singleCycleView.setWaveformType(waveform);
+    // Sync SingleCycleView waveform type with oscillator from demo graph
+    // NOTE: We must NOT access voice->getOscillator() here because the audio thread
+    // may be rebuilding the voice's graph (via performGraphSynchronization), which
+    // would cause a crash. Use demo graph instead (safe, UI thread only).
+    auto& graph = audioProcessor.getDemoGraph();
+    if (auto* node = graph.getNode(selectedOscillatorId)) {
+        if (auto* osc = dynamic_cast<vizasynth::OscillatorSource*>(node)) {
+            singleCycleView.setWaveformType(osc->getWaveform());
+        }
     }
 
     // Track note changes for envelope visualization (handles external MIDI)
@@ -955,11 +980,13 @@ void VizASynthAudioProcessorEditor::applyThemeToComponents()
         btn->setColour(juce::TextButton::textColourOffId, buttonText);
     }
 
-    // Apply theme to dynamic probe buttons
-    for (auto& button : probeButtons) {
-        button->setColour(juce::TextButton::buttonColourId, buttonDefault);
-        button->setColour(juce::TextButton::textColourOffId, buttonText);
-    }
+    // Apply theme to probe selector
+    auto comboBoxBg = config.getThemeColour("colors.comboBox.background", juce::Colour(0xff2d2d44));
+    auto comboBoxText = config.getThemeColour("colors.comboBox.text", juce::Colour(0xffe0e0e0));
+    auto comboBoxOutline = config.getThemeColour("colors.comboBox.outline", juce::Colour(0xff3d3d54));
+    probeSelector.setColour(juce::ComboBox::backgroundColourId, comboBoxBg);
+    probeSelector.setColour(juce::ComboBox::textColourId, comboBoxText);
+    probeSelector.setColour(juce::ComboBox::outlineColourId, comboBoxOutline);
 
     freezeButton.setColour(juce::TextButton::buttonColourId, buttonDefault);
     freezeButton.setColour(juce::TextButton::buttonOnColourId, toggleOnColor);
@@ -968,7 +995,8 @@ void VizASynthAudioProcessorEditor::applyThemeToComponents()
     // Apply label colors
     auto labelColor = config.getThemeColour("colors.labels.text", juce::Colour(0xffe0e0e0));
     for (auto* label : {&oscTypeLabel, &filterTypeLabel, &cutoffLabel, &resonanceLabel, &attackLabel,
-                        &decayLabel, &sustainLabel, &releaseLabel, &masterVolumeLabel, &timeWindowLabel}) {
+                        &decayLabel, &sustainLabel, &releaseLabel, &masterVolumeLabel, &timeWindowLabel,
+                        &probeSelectorLabel}) {
         label->setColour(juce::Label::textColourId, labelColor);
     }
 
@@ -979,31 +1007,21 @@ void VizASynthAudioProcessorEditor::applyThemeToComponents()
 
 void VizASynthAudioProcessorEditor::updateProbeButtons()
 {
-    auto& config = vizasynth::ConfigurationManager::getInstance();
     auto& registry = audioProcessor.getProbeRegistry();
     auto activeProbeId = registry.getActiveProbe();
     auto availableProbes = registry.getAvailableProbes();
 
-    // Ensure we have the right number of buttons
-    if (probeButtons.size() != availableProbes.size()) {
-        // Button count mismatch - should call updateFromProbeRegistry instead
-        return;
-    }
-
-    // Update highlighting for each button
-    for (size_t i = 0; i < probeButtons.size(); ++i) {
-        auto& button = probeButtons[i];
-        const auto& probe = availableProbes[i];
-        bool isActive = (probe.id == activeProbeId);
-
-        if (isActive) {
-            button->setColour(juce::TextButton::buttonColourId, probe.color.darker(0.3f));
-            button->setColour(juce::TextButton::textColourOffId, config.getTextHighlightColour());
-        } else {
-            button->setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
-            button->setColour(juce::TextButton::textColourOffId, probe.color);
+    // Find the index of the active probe and update ComboBox selection
+    int selectedId = 1;
+    for (size_t i = 0; i < availableProbes.size(); ++i) {
+        if (availableProbes[i].id == activeProbeId) {
+            selectedId = static_cast<int>(i) + 1;  // ComboBox IDs are 1-based
+            break;
         }
     }
+
+    // Update the ComboBox selection without triggering the onChange callback
+    probeSelector.setSelectedId(selectedId, juce::dontSendNotification);
 }
 
 void VizASynthAudioProcessorEditor::setVisualizationMode(VisualizationMode mode)
@@ -1096,43 +1114,31 @@ void VizASynthAudioProcessorEditor::onActiveProbeChanged(const std::string& prob
 
 void VizASynthAudioProcessorEditor::updateFromProbeRegistry()
 {
-    auto& config = vizasynth::ConfigurationManager::getInstance();
     auto& registry = audioProcessor.getProbeRegistry();
     auto availableProbes = registry.getAvailableProbes();
+    auto activeProbeId = registry.getActiveProbe();
 
-    // Remove existing probe buttons
-    for (auto& button : probeButtons) {
-        removeChildComponent(button.get());
-    }
-    probeButtons.clear();
+    // Clear and repopulate the dropdown
+    probeSelector.clear(juce::dontSendNotification);
 
-    // Create new buttons for each registered probe
+    int selectedId = 1;  // Default to first item
+    int itemId = 1;
+
     for (const auto& probe : availableProbes) {
-        auto button = std::make_unique<juce::TextButton>(probe.displayName);
-        button->setClickingTogglesState(false);
-        button->setColour(juce::TextButton::buttonColourId, config.getPanelBackgroundColour());
-        button->setColour(juce::TextButton::textColourOffId, probe.color);
+        probeSelector.addItem(probe.displayName, itemId);
 
-        // Capture probe ID for the click handler
-        auto probeId = probe.id;
-        button->onClick = [this, probeId]() {
-            // Set flag to prevent cascading updates during selection
-            isUpdatingProbeSelection = true;
-            audioProcessor.getProbeRegistry().setActiveProbe(probeId);
-            updateProbeButtons();
-            isUpdatingProbeSelection = false;
-        };
-
-        addChildComponent(*button);
-        // Only show if ChainEditor is not visible
-        button->setVisible(!showChainEditor);
-        probeButtons.push_back(std::move(button));
+        if (probe.id == activeProbeId) {
+            selectedId = itemId;
+        }
+        itemId++;
     }
 
-    // Update button highlighting based on active probe
-    updateProbeButtons();
+    // Set the selected item
+    if (probeSelector.getNumItems() > 0) {
+        probeSelector.setSelectedId(selectedId, juce::dontSendNotification);
+    }
 
-    // Re-layout to accommodate new buttons
+    // Re-layout to accommodate changes
     resized();
 }
 
@@ -1277,6 +1283,9 @@ void VizASynthAudioProcessorEditor::updateNodeSelectors()
 void VizASynthAudioProcessorEditor::updateOscillatorPanel()
 {
     // Use demo graph as source of truth for UI (ChainEditor modifies demoGraph)
+    // NOTE: We must NOT access voice->getOscillator() here because the audio thread
+    // may be rebuilding the voice's graph (via performGraphSynchronization), which
+    // invalidates the oscillator pointer. This was causing a crash (segfault).
     auto& graph = audioProcessor.getDemoGraph();
 
     auto* node = graph.getNode(selectedOscillatorId);
@@ -1287,12 +1296,9 @@ void VizASynthAudioProcessorEditor::updateOscillatorPanel()
 
         // Update band-limited toggle
         bandLimitedToggle.setToggleState(osc->isBandLimited(), juce::dontSendNotification);
-    }
 
-    // For waveform, read from actual voice oscillator (source of truth for audio)
-    // This ensures the UI shows what's actually being played
-    if (auto* voice = audioProcessor.getVoice(0)) {
-        auto waveform = voice->getOscillator().getWaveform();
+        // Read waveform from demo graph (safe, UI thread only)
+        auto waveform = osc->getWaveform();
         int waveformIndex = static_cast<int>(waveform);
         oscTypeCombo.setSelectedId(waveformIndex + 1, juce::dontSendNotification);
     }
@@ -1405,10 +1411,9 @@ void VizASynthAudioProcessorEditor::setLeftPanelControlsVisible(bool visible)
     timeWindowLabel.setVisible(visible);
     timeWindowSlider.setVisible(visible);
 
-    // Probe buttons
-    for (auto& button : probeButtons) {
-        button->setVisible(visible);
-    }
+    // Probe selector
+    probeSelectorLabel.setVisible(visible);
+    probeSelector.setVisible(visible);
 
     // Visualizations
     if (visible) {
