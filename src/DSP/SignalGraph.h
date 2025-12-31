@@ -146,6 +146,7 @@ public:
         // UI state
         NodePosition position;            // Position in ChainEditor
         bool probeVisible = true;         // Whether probe point is visible in UI
+        std::string displayName;          // Custom display name (empty = use node->getName())
 
         // Processing state
         float lastOutput = 0.0f;
@@ -357,6 +358,18 @@ public:
      * Get all visible probe node IDs (for populating UI dropdowns).
      */
     std::vector<NodeId> getVisibleProbeNodeIds() const;
+
+    /**
+     * Set a custom display name for a node.
+     * If empty, the node's getName() will be used as fallback.
+     */
+    void setNodeDisplayName(const NodeId& id, const std::string& displayName);
+
+    /**
+     * Get a node's display name.
+     * Returns the custom display name if set, otherwise falls back to node->getName().
+     */
+    std::string getNodeDisplayName(const NodeId& id) const;
 
     //=========================================================================
     // Serialization

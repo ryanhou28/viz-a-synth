@@ -1216,10 +1216,10 @@ void VizASynthAudioProcessorEditor::updateNodeSelectors()
     int oscItemId = 1;
     int selectedOscItemId = 1;
 
-    graph->forEachNode([this, &oscItemId, &selectedOscItemId](const std::string& nodeId, const vizasynth::SignalNode* node) {
+    graph->forEachNode([this, graph, &oscItemId, &selectedOscItemId](const std::string& nodeId, const vizasynth::SignalNode* node) {
         if (dynamic_cast<const vizasynth::OscillatorSource*>(node) != nullptr) {
-            // Create display name (e.g., "Osc 1" from "osc1")
-            std::string displayName = node->getName();
+            // Use custom display name if set, otherwise fall back to node->getName()
+            std::string displayName = graph->getNodeDisplayName(nodeId);
             if (displayName.length() > 10) {
                 displayName = displayName.substr(0, 10);
             }
@@ -1241,10 +1241,11 @@ void VizASynthAudioProcessorEditor::updateNodeSelectors()
     int filterItemId = 1;
     int selectedFilterItemId = 1;
 
-    graph->forEachNode([this, &filterItemId, &selectedFilterItemId](const std::string& nodeId, const vizasynth::SignalNode* node) {
+    graph->forEachNode([this, graph, &filterItemId, &selectedFilterItemId](const std::string& nodeId, const vizasynth::SignalNode* node) {
         // Check if it's a filter (has LTI analysis support)
         if (node->supportsAnalysis() && node->isLTI()) {
-            std::string displayName = node->getName();
+            // Use custom display name if set, otherwise fall back to node->getName()
+            std::string displayName = graph->getNodeDisplayName(nodeId);
             if (displayName.length() > 10) {
                 displayName = displayName.substr(0, 10);
             }

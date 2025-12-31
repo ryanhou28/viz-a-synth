@@ -647,7 +647,8 @@ void ChainEditor::rebuildVisualsFromGraph()
 
         NodeVisual visual;
         visual.id = id;
-        visual.displayName = node->getName();
+        // Use custom display name if set, otherwise fall back to node->getName()
+        visual.displayName = currentGraph->getNodeDisplayName(id);
         visual.type = "unknown";
 
         // Load position from SignalGraph if available
@@ -1160,15 +1161,35 @@ void ChainEditor::ModulePalette::refreshItems()
 ChainEditor::PropertiesPanel::PropertiesPanel(ChainEditor& editor)
     : owner(editor)
 {
+    // Node name editor label - use addChildComponent to keep hidden initially
+    nodeNameEditorLabel = std::make_unique<juce::Label>("nodeNameEditorLabel", "Name");
+    nodeNameEditorLabel->setFont(juce::Font(11.0f));
+    nodeNameEditorLabel->setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    addChildComponent(nodeNameEditorLabel.get());  // addChildComponent keeps it hidden
+
+    // Node name editor (for custom display names) - use addChildComponent to keep hidden initially
+    nodeNameEditor = std::make_unique<juce::TextEditor>("nodeNameEditor");
+    nodeNameEditor->setFont(juce::Font(13.0f));
+    nodeNameEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff353535));
+    nodeNameEditor->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    nodeNameEditor->setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff555555));
+    nodeNameEditor->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff4a90d9));
+    nodeNameEditor->addListener(this);
+    // Also add onFocusLost lambda for more reliable focus lost handling
+    nodeNameEditor->onFocusLost = [this]() {
+        applyNodeName();
+    };
+    addChildComponent(nodeNameEditor.get());  // addChildComponent keeps it hidden
+
     nodeNameLabel = std::make_unique<juce::Label>("nodeNameLabel", "");
     nodeNameLabel->setFont(juce::Font(14.0f, juce::Font::bold));
     nodeNameLabel->setColour(juce::Label::textColourId, juce::Colours::white);
-    addAndMakeVisible(nodeNameLabel.get());
+    addChildComponent(nodeNameLabel.get());  // addChildComponent keeps it hidden
 
     nodeTypeLabel = std::make_unique<juce::Label>("nodeTypeLabel", "");
     nodeTypeLabel->setFont(juce::Font(11.0f));
     nodeTypeLabel->setColour(juce::Label::textColourId, juce::Colours::grey);
-    addAndMakeVisible(nodeTypeLabel.get());
+    addChildComponent(nodeTypeLabel.get());  // addChildComponent keeps it hidden
 
     // Create delete button (initially hidden)
     deleteButton = std::make_unique<juce::TextButton>("Delete Node");
@@ -1176,8 +1197,7 @@ ChainEditor::PropertiesPanel::PropertiesPanel(ChainEditor& editor)
     deleteButton->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     deleteButton->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     deleteButton->addListener(this);
-    deleteButton->setVisible(false);
-    addAndMakeVisible(deleteButton.get());
+    addChildComponent(deleteButton.get());  // addChildComponent keeps it hidden
 }
 
 void ChainEditor::PropertiesPanel::paint(juce::Graphics& g)
@@ -1206,12 +1226,24 @@ void ChainEditor::PropertiesPanel::resized()
     auto deleteButtonBounds = bounds.removeFromBottom(36);
     deleteButtonBounds = deleteButtonBounds.reduced(0, 4);  // Add some vertical padding
 
-    // Node name and type labels
-    if (nodeNameLabel && nodeNameLabel->isVisible()) {
-        nodeNameLabel->setBounds(bounds.removeFromTop(20));
-    }
+    // Node type label (ID) at top
     if (nodeTypeLabel && nodeTypeLabel->isVisible()) {
         nodeTypeLabel->setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(4);  // Spacing
+    }
+
+    // Node name editor (for custom display names)
+    if (nodeNameEditorLabel && nodeNameEditorLabel->isVisible()) {
+        nodeNameEditorLabel->setBounds(bounds.removeFromTop(16));
+    }
+    if (nodeNameEditor && nodeNameEditor->isVisible()) {
+        nodeNameEditor->setBounds(bounds.removeFromTop(24));
+        bounds.removeFromTop(8);  // Spacing
+    }
+
+    // Legacy node name label (now hidden, replaced by editor)
+    if (nodeNameLabel && nodeNameLabel->isVisible()) {
+        nodeNameLabel->setBounds(bounds.removeFromTop(20));
         bounds.removeFromTop(8);  // Spacing
     }
 
@@ -1259,6 +1291,8 @@ void ChainEditor::PropertiesPanel::clearSelection()
 
     if (nodeNameLabel) nodeNameLabel->setVisible(false);
     if (nodeTypeLabel) nodeTypeLabel->setVisible(false);
+    if (nodeNameEditor) nodeNameEditor->setVisible(false);
+    if (nodeNameEditorLabel) nodeNameEditorLabel->setVisible(false);
     if (deleteButton) deleteButton->setVisible(false);
 
     repaint();
@@ -1283,6 +1317,8 @@ void ChainEditor::PropertiesPanel::rebuildControls()
     if (selectedNodeId.empty() || !owner.currentGraph) {
         if (nodeNameLabel) nodeNameLabel->setVisible(false);
         if (nodeTypeLabel) nodeTypeLabel->setVisible(false);
+        if (nodeNameEditor) nodeNameEditor->setVisible(false);
+        if (nodeNameEditorLabel) nodeNameEditorLabel->setVisible(false);
         return;
     }
 
@@ -1290,15 +1326,33 @@ void ChainEditor::PropertiesPanel::rebuildControls()
     if (!node) {
         if (nodeNameLabel) nodeNameLabel->setVisible(false);
         if (nodeTypeLabel) nodeTypeLabel->setVisible(false);
+        if (nodeNameEditor) nodeNameEditor->setVisible(false);
+        if (nodeNameEditorLabel) nodeNameEditorLabel->setVisible(false);
         return;
     }
 
-    // Update node info labels
-    nodeNameLabel->setText(node->getName(), juce::dontSendNotification);
-    nodeNameLabel->setVisible(true);
+    // Check if node is protected (OUTPUT node)
+    bool isProtected = owner.currentGraph->isNodeProtected(selectedNodeId);
 
+    // Show ID label
     nodeTypeLabel->setText("ID: " + selectedNodeId, juce::dontSendNotification);
     nodeTypeLabel->setVisible(true);
+
+    // Show name editor for non-protected nodes
+    if (!isProtected) {
+        // Get the current display name (custom or default)
+        std::string currentDisplayName = owner.currentGraph->getNodeDisplayName(selectedNodeId);
+        nodeNameEditor->setText(currentDisplayName, juce::dontSendNotification);
+        nodeNameEditor->setVisible(true);
+        nodeNameEditorLabel->setVisible(true);
+        nodeNameLabel->setVisible(false);  // Hide old label
+    } else {
+        // For protected nodes (like OUTPUT), show static label instead
+        nodeNameLabel->setText(node->getName(), juce::dontSendNotification);
+        nodeNameLabel->setVisible(true);
+        nodeNameEditor->setVisible(false);
+        nodeNameEditorLabel->setVisible(false);
+    }
 
     // Check node type and create appropriate controls
     if (auto* osc = dynamic_cast<OscillatorSource*>(node)) {
@@ -1316,8 +1370,6 @@ void ChainEditor::PropertiesPanel::rebuildControls()
     if (deleteButton) {
         deleteButton->setVisible(true);
 
-        // Check if node is protected (cannot be deleted)
-        bool isProtected = owner.currentGraph->isNodeProtected(selectedNodeId);
         deleteButton->setEnabled(!isProtected);
 
         if (isProtected) {
@@ -1561,6 +1613,62 @@ void ChainEditor::PropertiesPanel::buttonClicked(juce::Button* button)
         std::string nodeToDelete = selectedNodeId;
         owner.removeNode(nodeToDelete);  // This will also call clearSelection()
     }
+}
+
+void ChainEditor::PropertiesPanel::textEditorReturnKeyPressed(juce::TextEditor& editor)
+{
+    if (&editor == nodeNameEditor.get()) {
+        applyNodeName();
+        // Remove focus from the editor
+        owner.grabKeyboardFocus();
+    }
+}
+
+void ChainEditor::PropertiesPanel::textEditorFocusLost(juce::TextEditor& editor)
+{
+    if (&editor == nodeNameEditor.get()) {
+        applyNodeName();
+    }
+}
+
+void ChainEditor::PropertiesPanel::applyNodeName()
+{
+    if (selectedNodeId.empty() || !owner.currentGraph || !nodeNameEditor) return;
+
+    std::string newName = nodeNameEditor->getText().toStdString();
+
+    // Trim whitespace
+    size_t start = newName.find_first_not_of(" \t\n\r");
+    size_t end = newName.find_last_not_of(" \t\n\r");
+    if (start != std::string::npos && end != std::string::npos) {
+        newName = newName.substr(start, end - start + 1);
+    } else {
+        newName.clear();
+    }
+
+    // Get the effective display name (use node's default name if empty)
+    std::string effectiveDisplayName = newName;
+    if (effectiveDisplayName.empty()) {
+        auto* node = owner.currentGraph->getNode(selectedNodeId);
+        if (node) {
+            effectiveDisplayName = node->getName();
+        }
+    }
+
+    // Set the display name in the graph (empty string = use default node name)
+    owner.currentGraph->setNodeDisplayName(selectedNodeId, newName);
+
+    // Update the probe registry's display name for this node
+    if (owner.probeRegistry) {
+        std::string probeId = selectedNodeId + ".output";
+        owner.probeRegistry->updateProbeDisplayName(probeId, effectiveDisplayName);
+    }
+
+    // Update the node visual in the canvas
+    owner.rebuildVisualsFromGraph();
+
+    // Notify that graph was modified - this triggers UI refresh including probe buttons
+    owner.notifyGraphModified();
 }
 
 } // namespace vizasynth

@@ -139,6 +139,16 @@ public:
     bool hasProbe(const std::string& id) const;
 
     /**
+     * Update a probe's display name.
+     * Used when the user renames a node in the ChainEditor.
+     *
+     * @param id The probe ID to update
+     * @param displayName New display name
+     * @return true if updated successfully, false if ID not found
+     */
+    bool updateProbeDisplayName(const std::string& id, const std::string& displayName);
+
+    /**
      * Clear all registered probes.
      */
     void clear();

@@ -59,6 +59,17 @@ bool ProbeRegistry::hasProbe(const std::string& id) const
     return probes.find(id) != probes.end();
 }
 
+bool ProbeRegistry::updateProbeDisplayName(const std::string& id, const std::string& displayName)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = probes.find(id);
+    if (it != probes.end()) {
+        it->second.displayName = displayName;
+        return true;
+    }
+    return false;
+}
+
 void ProbeRegistry::clear()
 {
     std::lock_guard<std::mutex> lock(mutex);

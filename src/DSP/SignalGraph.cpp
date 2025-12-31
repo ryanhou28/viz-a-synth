@@ -41,7 +41,10 @@ SignalGraph::NodeId SignalGraph::addNode(std::unique_ptr<SignalNode> node, const
     // Register probe with ProbeRegistry if available
     if (probeRegistry && graphNode.node) {
         std::string probeId = id + ".output";
-        std::string displayName = graphNode.node->getName();
+        // Use custom display name if set, otherwise fall back to node->getName()
+        std::string displayName = graphNode.displayName.empty()
+            ? graphNode.node->getName()
+            : graphNode.displayName;
         std::string processingType = graphNode.node->getProcessingType();
         juce::Colour color = graphNode.node->getProbeColor();
         int orderIndex = static_cast<int>(nodes.size() * 10);
@@ -408,11 +411,14 @@ void SignalGraph::registerAllProbesWithRegistry()
     auto processingOrder = computeProcessingOrder();
 
     int orderIndex = 0;
-    for (const auto& id : processingOrder) {
-        const auto* graphNode = getGraphNode(id);
+    for (const auto& nodeId : processingOrder) {
+        const auto* graphNode = getGraphNode(nodeId);
         if (graphNode && graphNode->node) {
-            std::string probeId = id + ".output";
-            std::string displayName = graphNode->node->getName();
+            std::string probeId = nodeId + ".output";
+            // Use custom display name if set, otherwise fall back to node->getName()
+            std::string displayName = graphNode->displayName.empty()
+                ? graphNode->node->getName()
+                : graphNode->displayName;
             std::string processingType = graphNode->node->getProcessingType();
             juce::Colour color = graphNode->node->getProbeColor();
 
@@ -893,6 +899,29 @@ std::vector<SignalGraph::NodeId> SignalGraph::getVisibleProbeNodeIds() const
     return visibleIds;
 }
 
+void SignalGraph::setNodeDisplayName(const NodeId& id, const std::string& displayName)
+{
+    auto* graphNode = getGraphNode(id);
+    if (graphNode) {
+        graphNode->displayName = displayName;
+    }
+}
+
+std::string SignalGraph::getNodeDisplayName(const NodeId& id) const
+{
+    const auto* graphNode = getGraphNode(id);
+    if (graphNode) {
+        // Return custom display name if set, otherwise fall back to node->getName()
+        if (!graphNode->displayName.empty()) {
+            return graphNode->displayName;
+        }
+        if (graphNode->node) {
+            return graphNode->node->getName();
+        }
+    }
+    return "";
+}
+
 //=============================================================================
 // SignalGraph - Serialization
 //=============================================================================
@@ -958,6 +987,11 @@ juce::var SignalGraph::toJson() const
 
         // Probe visibility
         nodeObj->setProperty("probeVisible", graphNode.probeVisible);
+
+        // Custom display name (only save if non-empty)
+        if (!graphNode.displayName.empty()) {
+            nodeObj->setProperty("displayName", juce::String(graphNode.displayName));
+        }
 
         // Node-specific parameters
         auto* paramsObj = new juce::DynamicObject();
@@ -1066,6 +1100,12 @@ bool SignalGraph::fromJson(const juce::var& json, NodeFactory nodeFactory)
             // Set probe visibility
             bool probeVisible = static_cast<bool>(nodeVar.getProperty("probeVisible", true));
             setNodeProbeVisible(id.toStdString(), probeVisible);
+
+            // Set custom display name (if present)
+            juce::String displayName = nodeVar.getProperty("displayName", "").toString();
+            if (displayName.isNotEmpty()) {
+                setNodeDisplayName(id.toStdString(), displayName.toStdString());
+            }
         }
     }
 

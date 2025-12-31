@@ -270,7 +270,8 @@ private:
     class PropertiesPanel : public juce::Component,
                             public juce::Slider::Listener,
                             public juce::ComboBox::Listener,
-                            public juce::Button::Listener {
+                            public juce::Button::Listener,
+                            public juce::TextEditor::Listener {
     public:
         PropertiesPanel(ChainEditor& editor);
 
@@ -284,6 +285,8 @@ private:
         void sliderValueChanged(juce::Slider* slider) override;
         void comboBoxChanged(juce::ComboBox* comboBox) override;
         void buttonClicked(juce::Button* button) override;
+        void textEditorReturnKeyPressed(juce::TextEditor& editor) override;
+        void textEditorFocusLost(juce::TextEditor& editor) override;
 
     private:
         ChainEditor& owner;
@@ -308,6 +311,10 @@ private:
         // Delete button
         std::unique_ptr<juce::TextButton> deleteButton;
 
+        // Node name editor (for custom display names)
+        std::unique_ptr<juce::TextEditor> nodeNameEditor;
+        std::unique_ptr<juce::Label> nodeNameEditorLabel;
+
         // Section labels
         std::unique_ptr<juce::Label> nodeNameLabel;
         std::unique_ptr<juce::Label> nodeTypeLabel;
@@ -317,6 +324,7 @@ private:
         void createFilterControls(FilterNode* filter);
         void createMixerControls(SignalNode* mixer);
         void createProbeVisibilityControl();
+        void applyNodeName();
     };
 
     //=========================================================================
